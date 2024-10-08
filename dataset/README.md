@@ -1,5 +1,4 @@
 # Download Dataset
----
 
 ```
 python download_dataset.py --email {Your email} --password {Your password} --output_dir {directory to save videos}
