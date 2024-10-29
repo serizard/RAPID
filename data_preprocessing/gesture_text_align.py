@@ -2,6 +2,8 @@ import json
 import os
 import cv2
 import numpy as np
+from glob import glob
+from tqdm import tqdm
 
 def load_video_metadata(metadata_path):
     with open(metadata_path, 'r') as f:
@@ -29,7 +31,10 @@ def extract_gesture_images(transcript_path, video_metadata):
 
     cap.release()
 
-    data = json.load(open(transcript_path, "r", encoding='utf-8'))
+    try:
+        data = json.load(open(transcript_path, "r", encoding='utf-8'))
+    except:
+        data = json.load(open(transcript_path, "r", encoding='cp949'))
     frame_times = [frame['time'] for frame in frames]
 
     save_dir = os.path.join(os.path.dirname(transcript_path).replace("transcripts", "gestures"), video_name)
@@ -70,7 +75,8 @@ def extract_gesture_images(transcript_path, video_metadata):
         json.dump(txt_img_paths, f, indent=2)
 
 if __name__ == "__main__":
-    metadata_path = 'D:/aphasia/MMATD/data_preprocessing/video_metadata.json'
-    video_metadata = load_video_metadata(metadata_path)
-    transcript_path = "D:/aphasia/dataset/transcripts/ACWT01a.json"
-    extract_gesture_images(transcript_path, video_metadata)
+    video_metadata = load_video_metadata('/workspace/MMATD/data_preprocessing/video_metadata.json')
+    transcript_paths = glob('/workspace/aphasiabank/transcripts/*.json')
+
+    for transcript_path in tqdm(transcript_paths, desc="Extracting gesture images"):
+        extract_gesture_images(transcript_path, video_metadata)

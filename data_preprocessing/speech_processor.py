@@ -30,7 +30,7 @@ class AphasiaSpeechProcessor:
         *args,
         max_retries: int = 3,
         retry_delay: float = 1.0,
-        error_log_file: str = "error_log.txt",
+        error_log_file: str = "transcribing_errors.txt",
         **kwargs
     ):
         """
