@@ -1,2 +1,4 @@
 modules/*/__pycache__
 __pycache__
+data_preprocessing/*.json
+data_preprocessing/*.txt
