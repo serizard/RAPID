@@ -258,18 +258,19 @@ class Model(LightningModule):
         vid_feat = np.load(self.file_path['feature_path'][self.v+ str(self.chunk_size + 2)])   
         
         # Add Disfluency Tokens
-        with open(f'./dataset/disfluency_tk_300.json','r') as f:
+        with open('D:/aphasia/MMATD/dataset/_disfluency_tk_300.json','r') as f:
             keywords = json.load(f)
     
         keywords = keywords[:self.token_num]
         if self.config['update']:
             print("vocab size (before) : ", len(self.tokenizer))
-            self.tokenizer.add_tokens(keywords, special_tokens=False) 
+            self.tokenizer.add_tokens(keywords, special_tokens=False)
             print("vocab size (after) : ", len(self.tokenizer))
             self.model.resize_token_embeddings(len(self.tokenizer))
-            
+       
         self.keyword_token = torch.tensor(self.tokenizer.encode(' '.join(keywords))[1:-1])
         self.key_embed = self.model(input_ids =self.keyword_token.unsqueeze(0))[0] # 200X768
+        np.save(self.file_path['feature_path']['k'], self.key_embed.detach().cpu().numpy())
 
         # Tokenizer
         print('tokenizing')
@@ -471,24 +472,24 @@ if __name__ == '__main__':
     parser.add_argument("--random_seed", type=int, default=2023) 
     parser.add_argument("--dropout", type=float, default=0.01,help="dropout probablity")
     parser.add_argument("--lr", type=float, default=5e-5, help="learning rate")
-    parser.add_argument("--gpu", type=int, default=1,  help="save fname")
+    parser.add_argument("--gpu", type=int, default=0,  help="save fname")
     parser.add_argument("--optimizer", type=str, default='adamw')                
     parser.add_argument("--lr_scheduler", type=str, default='exp')   
     parser.add_argument("--loss", type=str, default="cross") 
     parser.add_argument("--split", type=int, default=0) # 0~5 
     parser.add_argument("--chunk_size", type=int, default=50) 
-    parser.add_argument("--y_col", type=str, default='type_label')  #label fre_label com_label
-    parser.add_argument("--num_labels", type=int, default=4)
+    parser.add_argument("--y_col", type=str, default='type')  #label fre_label com_label
+    parser.add_argument("--num_labels", type=int, default=7)
     parser.add_argument("--modal", type=str, default="t_a_v") # a, am, t, v
     parser.add_argument("--att", type=str, default="t_a_v") # a, am, t, v
     parser.add_argument("--embed_type", type=str, default="rb") 
     parser.add_argument("--agg_type", type=str, default="bilstm") 
     parser.add_argument("--hetero_type", type=str, default="min") 
-    parser.add_argument('--update', action='store_true')
+    parser.add_argument('--update', action='store_true', default=True)
     parser.add_argument('--no-update', dest='update', action='store_false')
-    parser.add_argument('--edge_weight', action='store_true')
+    parser.add_argument('--edge_weight', action='store_true', default=True)
     parser.add_argument('--no-edge_weight', dest='edge_weight', action='store_false')
-    parser.add_argument('--graphuse', action='store_true')
+    parser.add_argument('--graphuse', action='store_true', default=True)
     parser.add_argument('--no-graphuse', dest='graphuse', action='store_false')
     parser.add_argument('--rel_type', type=str, default='va')
     parser.add_argument('--train_gender', type=str, default='both')

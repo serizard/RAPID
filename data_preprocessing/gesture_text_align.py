@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from glob import glob
 from tqdm import tqdm
+import shutil
 
 def load_video_metadata(metadata_path):
     with open(metadata_path, 'r') as f:
@@ -12,6 +13,15 @@ def load_video_metadata(metadata_path):
 
 def extract_gesture_images(transcript_path, video_metadata):
     video_name = os.path.basename(transcript_path).replace(".json", "")
+
+    save_dir = os.path.join(os.path.dirname(transcript_path).replace("transcripts", "gestures"), video_name)
+    if os.path.exists(os.path.join(save_dir, "txt_img_paths.json")):
+        raise FileExistsError(f"Gesture images for {video_name} already exist")
+    elif os.path.exists(save_dir):
+        shutil.rmtree(save_dir)
+    
+    os.makedirs(save_dir, exist_ok=True)
+
     video_path = transcript_path.replace("transcripts", "video_clips").replace("json", "mp4")
     inv_timestamps = video_metadata['/' + video_name]['timestamp_inv']
 
@@ -26,7 +36,7 @@ def extract_gesture_images(transcript_path, video_metadata):
         if not ret:
             break
         if curr_frame % hop == 0:
-            frames.append({'time': int(curr_frame // hop), 'frame': frame})
+            frames.append({'time': int(curr_frame // hop)+1, 'frame': frame})
         curr_frame += 1
 
     cap.release()
@@ -59,7 +69,10 @@ def extract_gesture_images(transcript_path, video_metadata):
         for word_info in segment["words"]:
             start_time, end_time, text = word_info["start"], word_info["end"], word_info["text"]
             closest_index = int(np.round(start_time)) if np.round(start_time) <= end_time else int(start_time)
-            frame = frames[frame_times.index(closest_index)]["frame"]
+            try:
+                frame = frames[frame_times.index(closest_index)]["frame"]
+            except:
+                continue
             gesture_fp = os.path.join(save_dir, f"{id}_gesture.jpg")
             cv2.imwrite(gesture_fp, frame)
 
@@ -75,8 +88,16 @@ def extract_gesture_images(transcript_path, video_metadata):
         json.dump(txt_img_paths, f, indent=2)
 
 if __name__ == "__main__":
-    video_metadata = load_video_metadata('/workspace/MMATD/data_preprocessing/video_metadata.json')
-    transcript_paths = glob('/workspace/aphasiabank/transcripts/*.json')
-
+    video_metadata = load_video_metadata('D:/aphasia/MMATD/data_preprocessing/video_metadata.json')
+    transcript_paths = glob('D:/aphasia/dataset/transcripts/*.json')
     for transcript_path in tqdm(transcript_paths, desc="Extracting gesture images"):
-        extract_gesture_images(transcript_path, video_metadata)
+        try:
+            extract_gesture_images(transcript_path, video_metadata)
+        except KeyboardInterrupt:
+            break
+        except FileExistsError:
+            continue
+        except Exception as e:
+            print(e)
+            print(f"Failed to extract gesture images from {transcript_path}")
+            continue

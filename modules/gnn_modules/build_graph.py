@@ -28,20 +28,18 @@ class build_graph:
             
             return historic
         
-        
-        # adj matrix
-        self.u_w = np.load(file_path['graph']['adj'+ str(chunk_size)])[:,:,:num_token]
-        self.u_w = MinMaxScaler().fit_transform(self.u_w.reshape(self.u_w.shape[0], -1)).reshape(self.u_w.shape)
-        
-        
         # audio, video feature 
-        self.a_feat = np.load(file_path['feature_path']['a' + str(chunk_size)])
-        self.v_feat = np.load(file_path['feature_path']['v' + str(chunk_size)])
+        self.a_feat = np.load(file_path['feature_path']['a' + str(chunk_size)]) # (n_samples, sequence_length=n_nodes, audio_feature_dim)
+        self.v_feat = np.load(file_path['feature_path']['v' + str(chunk_size)]) # (n_samples, sequence_length=n_nodes, video_feature_dim)
         
-        self.a_feat = historic_feat(self.a_feat)
-        self.v_feat = historic_feat(self.v_feat)
+        self.a_feat = historic_feat(self.a_feat) # (n_samples, sequence_length, audio_feature_dim * 3)
+        self.v_feat = historic_feat(self.v_feat) # (n_samples, sequence_length, video_feature_dim * 3)
+
+        # adj matrix
+        self.u_w = np.load(file_path['graph']['adj'+ str(chunk_size)])[:,:,:num_token] # (n_samples, n_nodes, n_disfluency)
+        self.u_w = MinMaxScaler().fit_transform(self.u_w.reshape(self.u_w.shape[0], -1)).reshape(self.u_w.shape) # (n_samples, n_nodes, n_disfluency)
         
-        self.k_feat = np.load(file_path['feature_path']['k'])[:num_token,:]
+        self.k_feat = np.load(file_path['feature_path']['k'])[:num_token,:] # (n_disfluency, embedding_dim)
         
         
         print(self.u_w.shape, self.a_feat.shape, self.v_feat.shape, self.k_feat.shape)
@@ -80,19 +78,36 @@ class build_graph:
                 edge_feat_dict['ka'] = e_feat
                 
             elif self.config['rel_type'] == 'va':
-                data_dict[('v', 'vk', 'k')] = (u_w_mat[0],u_w_mat[1])
-                data_dict[('k', 'kv', 'v')] = (u_w_mat[1],u_w_mat[0])
-                num_nodes_dict['v'] = arr.shape[0]
-                node_feat_dict['v'] = v_feat
-                edge_feat_dict[('v', 'vk', 'k')] = e_feat
-                edge_feat_dict[('k', 'kv', 'v')] = e_feat
 
-                data_dict[('a', 'ak', 'k')] = (u_w_mat[0],u_w_mat[1])
-                data_dict[('k', 'ka', 'a')] = (u_w_mat[1],u_w_mat[0])
-                num_nodes_dict['a'] = arr.shape[0]
-                node_feat_dict['a'] = a_feat
-                edge_feat_dict[('a', 'ak', 'k')] = e_feat
-                edge_feat_dict[('k', 'ka', 'a')] = e_feat
+                # 비디오-키워드 관계용 인접행렬
+                v_k_mat = torch.tensor(arr[:len(v_feat)].nonzero()).to(f"cuda:{device}")
+                data_dict[('v', 'vk', 'k')] = (v_k_mat[0], v_k_mat[1])
+                data_dict[('k', 'kv', 'v')] = (v_k_mat[1], v_k_mat[0])
+                num_nodes_dict['v'] = len(v_feat)
+                edge_feat_dict[('v', 'vk', 'k')] = torch.tensor([arr[u,v] for u,v in zip(v_k_mat[0], v_k_mat[1])], dtype=torch.float).to(f"cuda:{device}")
+                edge_feat_dict[('k', 'kv', 'v')] = edge_feat_dict[('v', 'vk', 'k')]                
+
+
+                # 오디오-키워드 관계용 인접행렬
+                a_k_mat = torch.tensor(arr[len(v_feat):].nonzero()).to(f"cuda:{device}")
+                data_dict[('a', 'ak', 'k')] = (a_k_mat[0], a_k_mat[1])
+                data_dict[('k', 'ka', 'a')] = (a_k_mat[1], a_k_mat[0])
+                num_nodes_dict['a'] = len(a_feat)
+                edge_feat_dict[('a', 'ak', 'k')] = torch.tensor([arr[u,v] for u,v in zip(a_k_mat[0], a_k_mat[1])], dtype=torch.float).to(f"cuda:{device}")
+                edge_feat_dict[('k', 'ka', 'a')] = edge_feat_dict[('a', 'ak', 'k')]
+                # data_dict[('v', 'vk', 'k')] = (u_w_mat[0],u_w_mat[1])
+                # data_dict[('k', 'kv', 'v')] = (u_w_mat[1],u_w_mat[0])
+                # num_nodes_dict['v'] = arr.shape[0]
+                # node_feat_dict['v'] = v_feat
+                # edge_feat_dict[('v', 'vk', 'k')] = e_feat
+                # edge_feat_dict[('k', 'kv', 'v')] = e_feat
+
+                # data_dict[('a', 'ak', 'k')] = (u_w_mat[0],u_w_mat[1])
+                # data_dict[('k', 'ka', 'a')] = (u_w_mat[1],u_w_mat[0])
+                # num_nodes_dict['a'] = arr.shape[0]
+                # node_feat_dict['a'] = a_feat
+                # edge_feat_dict[('a', 'ak', 'k')] = e_feat
+                # edge_feat_dict[('k', 'ka', 'a')] = e_feat
             
             
             num_nodes_dict['k'] = arr.shape[1]
