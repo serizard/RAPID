@@ -3,3 +3,6 @@ __pycache__
 dataset/*.json
 dataset/*.npy
 data_preprocessing/*.json
+wandb/
+_result/
+capstone/
