@@ -1,0 +1,26 @@
+# device
+gpu: cpu
+
+# model
+random_seed: 2023
+chunk_size: 50
+y_col: type_label
+num_labels: 7
+dropout: 0.01
+loss: cross
+modal: t_a_v
+att: t_a_v
+hidden:
+  t: 768
+  a: 25
+  v: 69
+  x: 0
+num_token: 150
+agg_type: bilstm
+hetero_type: min
+rel_type: va
+graphuse: True
+
+# paths
+keyword_path: D:/aphasia/MMATD/dataset/_disfluency_tk_300.json
+checkpoint_path: D:/aphasia/MMATD/src/ckpt/epoch=40-step=8282.ckpt
