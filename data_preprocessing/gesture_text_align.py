@@ -22,7 +22,7 @@ def extract_gesture_images(transcript_path, video_metadata):
     
     os.makedirs(save_dir, exist_ok=True)
 
-    video_path = transcript_path.replace("transcripts", "video_clips").replace("json", "mp4")
+    video_path = transcript_path.replace("transcripts", "video_clips").replace("json", "mp4").replace('/remake_dataset', '')
     inv_timestamps = video_metadata['/' + video_name]['timestamp_inv']
 
     cap = cv2.VideoCapture(video_path)
@@ -89,15 +89,20 @@ def extract_gesture_images(transcript_path, video_metadata):
 
 if __name__ == "__main__":
     video_metadata = load_video_metadata('D:/aphasia/MMATD/data_preprocessing/video_metadata.json')
-    transcript_paths = glob('D:/aphasia/dataset/transcripts/*.json')
-    for transcript_path in tqdm(transcript_paths, desc="Extracting gesture images"):
-        try:
-            extract_gesture_images(transcript_path, video_metadata)
-        except KeyboardInterrupt:
-            break
-        except FileExistsError:
-            continue
-        except Exception as e:
-            print(e)
-            print(f"Failed to extract gesture images from {transcript_path}")
-            continue
+    transcript_paths = glob('D:/aphasia/dataset/remake_dataset/transcripts/*.json')
+    with tqdm(total=len(transcript_paths), desc="Extracting gesture images") as pbar:
+        for transcript_path in transcript_paths:
+            try:
+                extract_gesture_images(transcript_path, video_metadata)
+                pbar.update(1)
+            except KeyboardInterrupt:
+                break
+            except FileExistsError:
+                print(f"Gesture images for {os.path.basename(transcript_path).replace('.json', '')} already exist")
+                pbar.update(1)
+                continue
+            except Exception as e:
+                pbar.update(1)
+                print(e)
+                print(f"Failed to extract gesture images from {transcript_path}")
+                continue

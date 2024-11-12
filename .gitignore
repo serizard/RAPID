@@ -2,7 +2,11 @@ modules/*/__pycache__
 __pycache__
 dataset/*.json
 dataset/*.npy
+dataset/*.txt
 data_preprocessing/*.json
 wandb/
 _result/
 capstone/
+src/ckpt
+src/*.mp3
+src/*.mp4

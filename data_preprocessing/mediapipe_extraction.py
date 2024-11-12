@@ -53,8 +53,8 @@ def process_single_video(args):
 
 def main():
     # Data loading
-    ex_df = pd.read_csv('D:/aphasia/dataset/paths.csv')
-    pose_file_list = glob('D:/aphasia/dataset/tokens/pose_bind/*/*.json')
+    ex_df = pd.read_csv('D:/aphasia/dataset/remake_dataset/paths.csv')
+    pose_file_list = glob('D:/aphasia/dataset/remake_dataset/tokens/pose_bind/*/*.json')
     
     video_col = ['NOSE_x', 'NOSE_y', 'NOSE_z', 'LEFT_EYE_INNER_x', 'LEFT_EYE_INNER_y', 'LEFT_EYE_INNER_z', 
                 'LEFT_EYE_x', 'LEFT_EYE_y', 'LEFT_EYE_z', 'LEFT_EYE_OUTER_x', 'LEFT_EYE_OUTER_y', 'LEFT_EYE_OUTER_z', 
@@ -72,7 +72,6 @@ def main():
     
     # Prepare arguments for parallel processing
     args_list = [(path, pose_file_list, video_col) for path in ex_df['txt_img_path'].tolist()]
-    
     # Create processing pool
     num_processes = os.cpu_count() // 2  # Using half of available CPU cores
     
@@ -84,7 +83,7 @@ def main():
     ex_df['pose_path'] = new_pose_files
     
     # Save updated DataFrame
-    ex_df.to_csv('D:/aphasia/dataset/paths_pose_added.csv', index=False)
+    ex_df.to_csv('D:/aphasia/dataset/remake_dataset/paths_pose_added.csv', index=False)
 
 if __name__ == '__main__':
     main()

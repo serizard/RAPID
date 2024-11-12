@@ -12,7 +12,7 @@ from utils import get_labels, add_special_tokens_to_features, create_feature_adj
 
 
 def make_chunks(args):
-    with open('/workspace/MMATD/data_preprocessing/metadata.json','r') as f:
+    with open('D:/aphasia/MMATD/data_preprocessing/metadata.json','r') as f:
         previous_metadata = json.load(f)
         metadata = {}
         for k,v in previous_metadata.items():
@@ -24,7 +24,7 @@ def make_chunks(args):
                     "flu_label": {}, "com_label": {}, "data_id": {},
                     "duration": {}}
 
-    dirs = glob('/workspace/dataset/tokens/text_bind/*')
+    dirs = glob('D:/aphasia/dataset/tokens/text_bind/*')
     dfs = []
     audio_feats =[]
 
@@ -56,7 +56,7 @@ def make_chunks(args):
             continue
         # extract information for dataset_chunk
         for i in range(0, len(df_txt), args.chunk_size):
-            with open(f'/workspace/dataset/transcripts/{fn}.json', 'r') as f:
+            with open(f'D:/aphasia/dataset/transcripts/{fn}.json', 'r', encoding='utf-8') as f:
                 transcript = json.load(f)
             try:
                 if i + args.chunk_size <= len(df_txt):
@@ -87,7 +87,7 @@ def make_chunks(args):
             except:
                 continue
 
-    with open(f'/workspace/MMATD/dataset/dataset_chunk{args.chunk_size}.json','w') as f:
+    with open(f'D:/aphasia/MMATD/dataset/dataset_chunk{args.chunk_size}.json','w') as f:
         json.dump(dataset_chunk,f, indent=4)
 
 
@@ -111,10 +111,10 @@ def make_chunks(args):
     video_feats_with_additional_tokens = np.stack(video_feats_with_additional_tokens)
 
 
-    np.save(f'/workspace/MMATD/dataset/opensmile_chunk{args.chunk_size+2}_feat.npy', audio_feats_with_additional_tokens)
-    np.save(f'/workspace/MMATD/dataset/pose_chunk{args.chunk_size+2}_feat.npy', video_feats_with_additional_tokens)
-    np.save(f'/workspace/MMATD/dataset/opensmile_chunk{args.chunk_size}_feat.npy', audio_feats)
-    np.save(f'/workspace/MMATD/dataset/pose_chunk{args.chunk_size}_feat.npy', video_feats)
+    np.save(f'D:/aphasia/MMATD/dataset/opensmile_chunk{args.chunk_size+2}_feat.npy', audio_feats_with_additional_tokens)
+    np.save(f'D:/aphasia/MMATD/dataset/pose_chunk{args.chunk_size+2}_feat.npy', video_feats_with_additional_tokens)
+    np.save(f'D:/aphasia/MMATD/dataset/opensmile_chunk{args.chunk_size}_feat.npy', audio_feats)
+    np.save(f'D:/aphasia/MMATD/dataset/pose_chunk{args.chunk_size}_feat.npy', video_feats)
 
     Type_Control = len([v for v in dataset_chunk['type'].values() if v == 'Control'])
     Type_Anomic = len([v for v in dataset_chunk['type'].values() if v == 'Anomic'])
@@ -141,7 +141,7 @@ def make_chunks(args):
     Duration_Motor = np.mean([v for k, v in dataset_chunk['duration'].items() if dataset_chunk['type'][k] == 'Trans. Motor'])
     Duration_Total = np.mean([v for k, v in dataset_chunk['duration'].items()])      
 
-    with open(f'/workspace/MMATD/dataset/dataset_chunk{args.chunk_size}_stats.txt', 'w') as f:
+    with open(f'D:/aphasia/MMATD/dataset/dataset_chunk{args.chunk_size}_stats.txt', 'w') as f:
         f.write(f'Aphasia Type\n')
         f.write(f'Control: {Type_Control}\n')
         f.write(f'Anomic: {Type_Anomic}\n')
@@ -174,7 +174,7 @@ def make_chunks(args):
     return dfs
 
 def make_adj(args, dfs):
-    disfluency_tokens = json.load(open('/workspace/MMATD/dataset/_disfluency_tk_300.json', 'r'))
+    disfluency_tokens = json.load(open('D:/aphasia/MMATD/dataset/_disfluency_tk_300.json', 'r'))
 
     adj_matrix = create_feature_adjacency_matrices(
         dfs, 
@@ -185,7 +185,7 @@ def make_adj(args, dfs):
     )
     print(f"Adjacency matrix shape: {adj_matrix.shape}")
 
-    np.save(f'/workspace/MMATD/dataset/adj_chunk{args.chunk_size}_300_duration_stdmult{args.std_multiplier}.npy', adj_matrix)
+    np.save(f'D:/aphasia/MMATD/dataset/adj_chunk{args.chunk_size}_300_duration_stdmult{args.std_multiplier}.npy', adj_matrix)
 
 
 
@@ -195,7 +195,7 @@ class Args:
 
 if __name__ == '__main__':
     args = Args()
-    for i1, chunk_size in enumerate([20,30,40,50,60,70,80]):
+    for i1, chunk_size in enumerate([50]):
         args.chunk_size = chunk_size
         dfs = make_chunks(args)
         make_adj(args, dfs)

@@ -37,7 +37,7 @@ class build_graph:
         self.v_feat = historic_feat(self.v_feat) # (n_samples, sequence_length, video_feature_dim * 3)
 
         # adj matrix
-        self.u_w = np.load(file_path['graph']['adj'+ str(chunk_size)+'_'+str(stdmult)])[:,:,:num_token] # (n_samples, n_nodes, n_disfluency)
+        self.u_w = np.load(file_path['graph']['adj'+ str(chunk_size)])[:,:,:num_token] # (n_samples, n_nodes, n_disfluency)
         self.u_w = MinMaxScaler().fit_transform(self.u_w.reshape(self.u_w.shape[0], -1)).reshape(self.u_w.shape) # (n_samples, n_nodes, n_disfluency)
         
         self.k_feat = np.load(file_path['feature_path']['k'])[:num_token]
