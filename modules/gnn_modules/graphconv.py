@@ -273,11 +273,10 @@ class HeteroGraphConv(nn.Module):
         raise KeyError("Cannot find module with edge type %s" % etype)
 
     def forward(self, g, inputs, mod_args=None, mod_kwargs=None):
-        if mod_args is None:
-            mod_args = {}
         if mod_kwargs is None:
             mod_kwargs = {}
         outputs = {nty: [] for nty in g.dsttypes}
+        
         if isinstance(inputs, tuple) or g.is_block:
             if isinstance(inputs, tuple):
                 src_inputs, dst_inputs = inputs
@@ -291,27 +290,38 @@ class HeteroGraphConv(nn.Module):
                 rel_graph = g[stype, etype, dtype]
                 if stype not in src_inputs or dtype not in dst_inputs:
                     continue
-                dstdata = self._get_module((stype, etype, dtype))(
-                    graph=rel_graph,
-                    feat=(src_inputs[stype], dst_inputs[dtype]),
-                    *mod_args.get((stype, etype, dtype), ()),
-                    **mod_kwargs.get((stype, etype, dtype), {})
-                )
-                outputs[dtype].append(dstdata)
+                    
+                # edge_weight 처리 수정
+                current_kwargs = {
+                    'graph': rel_graph,
+                    'feat': (src_inputs[stype], dst_inputs[dtype])
+                }
                 
+                # mod_args가 텐서인 경우 edge_weight로 사용
+                if mod_args is not None and torch.is_tensor(mod_args):
+                    current_kwargs['edge_weight'] = mod_args
+                
+                dstdata = self._get_module((stype, etype, dtype))(**current_kwargs)
+                outputs[dtype].append(dstdata)
+        
         else:
             for stype, etype, dtype in g.canonical_etypes:
                 rel_graph = g[stype, etype, dtype]
                 if stype not in inputs:
                     continue
-                dstdata = self._get_module((stype, etype, dtype))(
-                    graph=rel_graph,
-                    feat=(inputs[stype], inputs[dtype]),
-                    *mod_args.get((stype, etype, dtype), ()),
-                    **mod_kwargs.get((stype, etype, dtype), {})
-                )
+                    
+                current_kwargs = {
+                    'graph': rel_graph,
+                    'feat': (inputs[stype], inputs[dtype])
+                }
                 
+                # mod_args가 텐서인 경우 edge_weight로 사용
+                if mod_args is not None and torch.is_tensor(mod_args):
+                    current_kwargs['edge_weight'] = mod_args
+                
+                dstdata = self._get_module((stype, etype, dtype))(**current_kwargs)
                 outputs[dtype].append(dstdata)
+
         rsts = {}
         for nty, alist in outputs.items():
             if len(alist) != 0:

@@ -20,7 +20,7 @@ class AphasiaSpeechProcessor:
             model_size: Whisper model size ("tiny", "base", "small", "medium", "large", "turbo")
             device: Computing device ("cuda" or "cpu")
         """
-        self.device = device if torch.cuda.is_available() and device == "cuda" else "cpu"
+        self.device = device
         self.model = whisper.load_model(model_size, device=self.device)
         self.model_size = model_size
 
@@ -30,7 +30,7 @@ class AphasiaSpeechProcessor:
         *args,
         max_retries: int = 3,
         retry_delay: float = 1.0,
-        error_log_file: str = "error_log.txt",
+        error_log_file: str = "transcribing_errors.txt",
         **kwargs
     ):
         """
@@ -158,7 +158,7 @@ class AphasiaSpeechProcessor:
             Preprocessed audio array
         """
         try:
-            audio = whisper.load_audio(audio_path)
+            audio = whisper.load_audio(audio_path, sr=16000)
             return audio
         except Exception as e:
             raise Exception(f"Error loading audio file: {str(e)}")
@@ -359,10 +359,10 @@ def process_aphasia_recording(
 
 # Example usage
 if __name__ == "__main__":
-    audio_dir = "/workspace/aphasiabank/audio_clips"
-    output_dir = "/workspace/aphasiabank/transcripts"
+    audio_dir = "/workspace/dataset/audio_clips"
+    output_dir = "/workspace/dataset/transcripts_re"
     
-    processor = AphasiaSpeechProcessor(model_size="medium")
+    processor = AphasiaSpeechProcessor(model_size="turbo")
     results = processor.batch_process_audio(
         audio_dir=audio_dir,
         output_dir=output_dir,

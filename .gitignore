@@ -1,4 +1,8 @@
 modules/*/__pycache__
 __pycache__
+dataset/*.json
+dataset/*.npy
 data_preprocessing/*.json
-data_preprocessing/*.txt
+wandb/
+_result/
+capstone/

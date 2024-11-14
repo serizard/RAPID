@@ -39,8 +39,14 @@ from modules.gnn_modules.build_graph import *
 from modules.gnn_modules.graphconv import SAGEConv,HeteroGraphConv
 from modules.gnn_modules.self_att import Attention
 
+## wandb
+import wandb
+from pytorch_lightning.loggers import WandbLogger
+
 os.environ['TORCH'] = torch.__version__
 os.environ['DGLBACKEND']= 'pytorch'
+
+import dgl
 
 def th_seed_everything(seed: int = 2023):
     random.seed(seed)
@@ -69,7 +75,7 @@ class Model(LightningModule):
         
         # config:
         self.file_path = configparser.ConfigParser()
-        self.file_path.read('path.ini')
+        self.file_path.read('/workspace/MMATD/path.ini')
 
         self.args = args
         self.config = config
@@ -160,6 +166,8 @@ class Model(LightningModule):
             
         self.fc1 = nn.Linear(self.t_hidden, int(self.t_hidden/2))
         self.fc2 = nn.Linear(int(self.t_hidden/2), self.output_dim)
+
+        self.test_step_outputs = []
         
     def forward(self,labels,txt,aud,vid,idx_, **kwargs):
         # 0. Input
@@ -218,7 +226,8 @@ class Model(LightningModule):
         txt_h = self.model(input_ids =txt)
         
         # 3. Multimodal Fusion Encoder
-        relation_h,_, att_vl =self.MULTModel(txt_h[0], aud_h, vid_h) # 32 x 20
+        with torch.cuda.amp.autocast():
+            relation_h,_, att_vl =self.MULTModel(txt_h[0], aud_h, vid_h) # 32 x 20
         last_h_l = txt_h[1]+relation_h
         
         # 4. Aphasia Type Detection
@@ -258,18 +267,24 @@ class Model(LightningModule):
         vid_feat = np.load(self.file_path['feature_path'][self.v+ str(self.chunk_size + 2)])   
         
         # Add Disfluency Tokens
-        with open(f'./dataset/disfluency_tk_300.json','r') as f:
+        with open('/workspace/MMATD/dataset/_disfluency_tk_300.json','r') as f:
             keywords = json.load(f)
     
         keywords = keywords[:self.token_num]
         if self.config['update']:
             print("vocab size (before) : ", len(self.tokenizer))
-            self.tokenizer.add_tokens(keywords, special_tokens=False) 
+            self.tokenizer.add_tokens(keywords, special_tokens=False)
             print("vocab size (after) : ", len(self.tokenizer))
             self.model.resize_token_embeddings(len(self.tokenizer))
-            
-        self.keyword_token = torch.tensor(self.tokenizer.encode(' '.join(keywords))[1:-1])
-        self.key_embed = self.model(input_ids =self.keyword_token.unsqueeze(0))[0] # 200X768
+       
+            keyword_tokens = []
+            for keyword in keywords:
+                token_ids = self.tokenizer.encode(keyword, add_special_tokens=False)
+                keyword_tokens.append(token_ids[0])
+                
+            self.keyword_token = torch.tensor(keyword_tokens)
+            self.key_embed = self.model(input_ids=self.keyword_token.unsqueeze(0))[0][0]
+            np.save(self.file_path['feature_path']['k'], self.key_embed.detach().cpu().numpy())
 
         # Tokenizer
         print('tokenizing')
@@ -279,11 +294,6 @@ class Model(LightningModule):
             max_length=self.args.max_length,
             truncation=True,
         ))
-        
-        # Heterogeneous Graph Construction 
-        if self.config['graphuse']:
-            print('build graph')
-            self.g_list = build_graph(self.config,self.file_path).data_load(self.gpu)
         
         
         # Stratified GroupKfold
@@ -304,9 +314,14 @@ class Model(LightningModule):
             df_train = df_train[df_train.sex == 'male']
             
         train_idxs = df_train.index.tolist()
+        
         pprint(f"data Size: {len(df_train)}, {len(df_test)}")
 
-        
+        # Heterogeneous Graph Construction 
+        if self.config['graphuse']:
+            print('build graph')
+            self.g_list = build_graph(self.config,self.file_path).data_load(self.gpu)
+
         # Dataloader
         self.train_data = TensorDataset(
             torch.tensor(df_train['data_id'].tolist(), dtype=torch.long),
@@ -325,6 +340,13 @@ class Model(LightningModule):
             torch.tensor(np.nan_to_num(vid_feat[test_idxs].astype('float64')), dtype=torch.float),
             torch.tensor(test_idxs, dtype=torch.long)
         )
+
+        print("DataFrame info:")
+        print(f"Total size: {len(df)}")
+        print(f"Index range: {df.index.min()} to {df.index.max()}")
+        print(f"Training data size: {len(df_train)}")
+        print(f"Training index range: {min(train_idxs)} to {max(train_idxs)}")
+        print(f"Number of graphs: {len(self.g_list)}")
 
     def train_dataloader(self):
         return DataLoader(
@@ -345,7 +367,7 @@ class Model(LightningModule):
     def training_step(self, batch, batch_idx):
         data_id, labels, txt,aud, vid,idx_ = batch 
         logits,loss,att_vl,v_att_score = self(labels, txt,aud, vid,idx_) 
-        self.log("train_loss", loss)   
+        self.log("train_loss", loss, prog_bar=True, logger=True)
         
         return {'loss': loss}
 
@@ -353,35 +375,47 @@ class Model(LightningModule):
         data_id, labels, txt,aud, vid,idx_ = batch 
         logits,loss,att_vl,v_att_score = self(labels, txt,aud, vid,idx_) 
 
-        att_save = list(att_vl.detach().cpu().numpy())
-        lstm_att_save = list(v_att_score.detach().cpu().numpy())
-        
         preds = logits.argmax(dim=-1)
-        y_true = list(labels.cpu().numpy())
-        y_pred = list(preds.cpu().numpy())
-        data_id = list(data_id.cpu().numpy())
-
-        return {
+        
+        self.log("test_loss", loss, prog_bar=True, logger=True)
+        
+        output = {
             'loss': loss,
-            'y_true': y_true,
-            'y_pred': y_pred,
-            'data_id': data_id,
-            'att_save': att_save,
-            'lstm_att_save': lstm_att_save,
+            'y_true': labels.cpu().numpy(),
+            'y_pred': preds.cpu().numpy(),
+            'data_id': data_id.cpu().numpy(),
+            'att_save': att_vl.detach().cpu().numpy(),
+            'lstm_att_save': v_att_score.detach().cpu().numpy(),
         }
 
-    def test_epoch_end(self, outputs):
+        self.test_step_outputs.append(output)
+        return output
+
+    def on_test_epoch_start(self):
+        self.test_step_outputs = []
+
+
+    def on_test_epoch_end(self):
+
+        outputs = self.test_step_outputs
+
+        # 모든 배치의 결과 합치기
         loss = torch.tensor(0, dtype=torch.float)
         y_true = []
         y_pred = []
         data_id = []
+        att_save = []
+        lstm_att_save = []
 
-        for i in outputs:
-            loss += i['loss'].cpu().detach()
-            y_true += i['y_true']
-            y_pred += i['y_pred']
-            data_id += i['data_id']
+        for output in outputs:  # self.test_step_outputs 대신 outputs 사용
+            loss += output['loss'].cpu().detach()
+            y_true.extend(output['y_true'])
+            y_pred.extend(output['y_pred'])
+            data_id.extend(output['data_id'])
+            att_save.extend(output['att_save'])
+            lstm_att_save.extend(output['lstm_att_save'])
         
+        # 평균 손실 계산
         _loss = loss / len(outputs)
         loss = float(_loss)
             
@@ -391,9 +425,18 @@ class Model(LightningModule):
             
         val_score = classification_report(y_true, y_pred, output_dict=True) 
         print(val_score)
-        
+
+        # wandb 로깅
+        for metric_name, value in val_score.items():
+            if isinstance(value, dict):
+                for sub_metric, sub_value in value.items():
+                    wandb.log({f'test/{metric_name}/{sub_metric}': sub_value})
+            else:
+                wandb.log({f'test/{metric_name}': value})
+
+        # 결과를 DataFrame으로 변환하고 저장
         val_df = pd.DataFrame.from_dict(val_score).T.reset_index()
-        val_df = val_df.rename(columns = {'index':'category'})
+        val_df = val_df.rename(columns={'index':'category'})
         val_df['save'] = self.save
         val_df['chunk_size'] = self.chunk_size
         val_df['test_size'] = len(y_pred)
@@ -417,25 +460,41 @@ class Model(LightningModule):
             'agg_type':[self.agg_type]*len(y_pred),
             'hetero_type':[self.hetero_type]*len(y_pred),
             'config':[str(self.config)]*len(y_pred),
-            
             'true' : y_true,
             'pred' : y_pred,
         }
         
-        # Result Save
+        # 결과 저장
         self.save_path = f"./_result/"
         Path(f"{self.save_path}/pred").mkdir(parents=True, exist_ok=True)
         self.save_time = datetime.now().__format__("%m%d_%H%M%S%Z")
         pd.DataFrame(val_df).to_csv(f'{self.save_path}{self.save_time}_{self.save}.csv',index=False)  
         pd.DataFrame(pred_dict).to_csv(f'{self.save_path}pred/{self.save_time}_{self.save}_pred.csv',index=False)
+        
 
-    
+
 def main(args,config):
     print("Using PyTorch Ver", torch.__version__)
     print("Fix Seed:", config['random_seed'])
     seed_everything(config['random_seed'])
     th_seed_everything(config['random_seed'])
-    
+
+    wandb.init(
+        entity="serizard1005-sungkyunkwan-university",
+        project="capstone_ablation_new", 
+        name=config['save'], 
+        config=config,
+        sync_tensorboard=True
+    )
+
+    wandb_logger = WandbLogger(
+        entity="serizard1005-sungkyunkwan-university",
+        project="capstone_ablation_new", 
+        name=config['save'], 
+        log_model=True,
+        sync_tensorboard=True
+    )
+
     model = Model(args,config) 
     model.preprocess_dataframe()
 
@@ -447,9 +506,8 @@ def main(args,config):
         mode='min'
     )
 
-    print(":: Start Training ::")
     trainer = Trainer(
-        logger = False,
+        logger = wandb_logger,
         enable_checkpointing=False,
         max_epochs=args.epochs,
         fast_dev_run=args.test_mode,
@@ -459,11 +517,27 @@ def main(args,config):
         # For GPU Setup
         accelerator='gpu',
         devices=[config['gpu']]if torch.cuda.is_available() else None,
-        precision=16 if args.fp16 else 32
+        precision=16 if args.fp16 else 32,
+        default_root_dir='/workspace/MMATD/logs'
     )
     
-    trainer.fit(model,train_dataloaders = model.train_dataloader())
-    trainer.test(model,dataloaders=model.test_dataloader())
+    if config['phase'] == 'train':
+        print(":: Start Training ::")
+        trainer.fit(model,train_dataloaders = model.train_dataloader())
+    elif config['phase'] == 'test':
+        state_dict = torch.load(config['checkpoint_path'], map_location='cpu')['state_dict']
+        model.load_state_dict(state_dict, strict=False)
+        print(":: Start Testing ::")
+        trainer.test(model,dataloaders=model.test_dataloader())
+    elif config['phase'] == 'train_test':
+        print(":: Start Training ::")
+        trainer.fit(model,train_dataloaders = model.train_dataloader())
+        print(":: Start Testing ::")
+        trainer.test(model,dataloaders=model.test_dataloader())
+    else:
+        raise ValueError("Please check the phase value")
+
+    wandb.finish()
 
 if __name__ == '__main__': 
 
@@ -471,30 +545,33 @@ if __name__ == '__main__':
     parser.add_argument("--random_seed", type=int, default=2023) 
     parser.add_argument("--dropout", type=float, default=0.01,help="dropout probablity")
     parser.add_argument("--lr", type=float, default=5e-5, help="learning rate")
-    parser.add_argument("--gpu", type=int, default=1,  help="save fname")
+    parser.add_argument("--gpu", type=int, default=0,  help="save fname")
     parser.add_argument("--optimizer", type=str, default='adamw')                
     parser.add_argument("--lr_scheduler", type=str, default='exp')   
     parser.add_argument("--loss", type=str, default="cross") 
     parser.add_argument("--split", type=int, default=0) # 0~5 
-    parser.add_argument("--chunk_size", type=int, default=50) 
+    parser.add_argument("--chunk_size", type=int, default=80) 
     parser.add_argument("--y_col", type=str, default='type_label')  #label fre_label com_label
-    parser.add_argument("--num_labels", type=int, default=4)
+    parser.add_argument("--num_labels", type=int, default=7)
     parser.add_argument("--modal", type=str, default="t_a_v") # a, am, t, v
     parser.add_argument("--att", type=str, default="t_a_v") # a, am, t, v
     parser.add_argument("--embed_type", type=str, default="rb") 
     parser.add_argument("--agg_type", type=str, default="bilstm") 
     parser.add_argument("--hetero_type", type=str, default="min") 
-    parser.add_argument('--update', action='store_true')
+    parser.add_argument('--update', action='store_true', default=True)
     parser.add_argument('--no-update', dest='update', action='store_false')
-    parser.add_argument('--edge_weight', action='store_true')
+    parser.add_argument('--edge_weight', action='store_true', default=True)
     parser.add_argument('--no-edge_weight', dest='edge_weight', action='store_false')
-    parser.add_argument('--graphuse', action='store_true')
+    parser.add_argument('--graphuse', action='store_true', default=True)
     parser.add_argument('--no-graphuse', dest='graphuse', action='store_false')
     parser.add_argument('--rel_type', type=str, default='va')
     parser.add_argument('--train_gender', type=str, default='both')
-    parser.add_argument("--num_token", type=int, default=150) 
+    parser.add_argument("--num_token", type=int, default=300) 
     parser.add_argument("--save", type=str, default="rebuttal") 
-    parser.add_argument("--use_gpu", action='store_true', default=False)
+    parser.add_argument("--use_gpu", action='store_true', default=True)
+    parser.add_argument("--phase", type=str, choices=['train', 'test', 'train_test'], default='train')
+    parser.add_argument("--checkpoint_path", type=str, default=None)
+    parser.add_argument("--stdmult", type=float, default=1.5)
     
     config = parser.parse_args()
     print(config)
