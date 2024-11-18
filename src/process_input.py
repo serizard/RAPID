@@ -182,16 +182,9 @@ class Transcriptor:
             device: Computing device ("cuda" or "cpu")
         """
 
-        self.device='cpu'
+        self.device=device
         self.model = whisper.load_model(name=model_size, device=self.device)
         self.model_size = model_size
-
-
-        # self.device = device
-        # print(self.device)
-        # print(type(self.device))
-        # self.model = whisper.load_model(model_size, device=self.device)
-        # self.model_size = model_size
 
     @staticmethod
     def _extract_audio(video_path):
