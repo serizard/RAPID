@@ -24,7 +24,6 @@ contourpy==1.1.1
 cycler==0.12.1
 debugpy==1.6.7
 decorator==5.1.1
-dgl==1.0.2+cu113
 docker-pycreds==0.4.0
 dpcpp-cpp-rt==2025.0.0
 executing==1.2.0
@@ -113,10 +112,6 @@ tbb==2022.0.0
 tcmlib==1.2.0
 threadpoolctl==3.5.0
 tokenizers==0.19.1
-torch==1.12.1+cu113
-torchaudio==0.12.1+cu113
-torchmetrics==1.4.2
-torchvision==0.13.1+cu113
 tornado==6.2
 tqdm==4.66.5
 traitlets==5.9.0

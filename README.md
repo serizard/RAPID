@@ -4,6 +4,13 @@ This codebase contains the python scripts for the model for the EMNLP 2023. http
 ## Environment & Installation Steps
 Python 3.8 & Pytorch 1.12
 
+### pytorch & dgl installation
+```
+pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 torchaudio==0.12.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113
+pip install torchmetrics==1.4.2
+pip install dgl==1.0.2 -f https://data.dgl.ai/wheels/cu113/repo.html
+```
+
 ## Run
 Execute the following steps in the same environment:
 ```
