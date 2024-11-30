@@ -46,64 +46,62 @@ class build_graph:
     def data_load(self,device):
         graph_list = []
         
-        with tqdm(total=len(self.u_w), desc='Building Graphs') as pbar:
-            for i, arr in enumerate(self.u_w):
-                u_w_mat = torch.tensor(arr.nonzero()).to(f"cuda:{device}")
+        for i, arr in enumerate(self.u_w):
+            u_w_mat = torch.tensor(arr.nonzero()).to(device)
 
-                #feat
-                a_feat = torch.tensor(np.nan_to_num(self.a_feat[i]),dtype=torch.float).to(f"cuda:{device}")
-                v_feat = torch.tensor(np.nan_to_num(self.v_feat[i]),dtype=torch.float).to(f"cuda:{device}")
-                k_feat = torch.tensor(np.nan_to_num(self.k_feat),dtype=torch.float).to(f"cuda:{device}")       
-                e_feat = torch.tensor([arr[u,v] for u,v in zip(u_w_mat[0], u_w_mat[1])],dtype=torch.float).to(f"cuda:{device}")
-                # base node - target user
-                data_dict = {} #edge
-                num_nodes_dict = {} #num_node
-                node_feat_dict = {} #node_feat
-                edge_feat_dict = {} 
-                
-                if self.config['rel_type'] == 'v':
-                    data_dict[('v', 'vk', 'k')] = (u_w_mat[0],u_w_mat[1])
-                    data_dict[('k', 'kv', 'v')] = (u_w_mat[1],u_w_mat[0])
-                    num_nodes_dict['v'] = arr.shape[0]
-                    node_feat_dict['v'] = v_feat
-                    edge_feat_dict['vk'] = e_feat
-                    edge_feat_dict['kv'] = e_feat
-                
-                elif self.config['rel_type'] == 'a':
-                    data_dict[('a', 'ak', 'k')] = (u_w_mat[0],u_w_mat[1])
-                    data_dict[('k', 'ka', 'a')] = (u_w_mat[1],u_w_mat[0])
-                    num_nodes_dict['a'] = arr.shape[0]
-                    node_feat_dict['a'] = a_feat
-                    edge_feat_dict['ak'] = e_feat
-                    edge_feat_dict['ka'] = e_feat
-                    
-                elif self.config['rel_type'] == 'va':
-                    data_dict[('v', 'vk', 'k')] = (u_w_mat[0],u_w_mat[1])
-                    data_dict[('k', 'kv', 'v')] = (u_w_mat[1],u_w_mat[0])
-                    num_nodes_dict['v'] = arr.shape[0]
-                    node_feat_dict['v'] = v_feat
-                    edge_feat_dict[('v', 'vk', 'k')] = e_feat
-                    edge_feat_dict[('k', 'kv', 'v')] = e_feat
-
-                    data_dict[('a', 'ak', 'k')] = (u_w_mat[0],u_w_mat[1])
-                    data_dict[('k', 'ka', 'a')] = (u_w_mat[1],u_w_mat[0])
-                    num_nodes_dict['a'] = arr.shape[0]
-                    node_feat_dict['a'] = a_feat
-                    edge_feat_dict[('a', 'ak', 'k')] = e_feat
-                    edge_feat_dict[('k', 'ka', 'a')] = e_feat
+            #feat
+            a_feat = torch.tensor(np.nan_to_num(self.a_feat[i]),dtype=torch.float).to(device)
+            v_feat = torch.tensor(np.nan_to_num(self.v_feat[i]),dtype=torch.float).to(device)
+            k_feat = torch.tensor(np.nan_to_num(self.k_feat),dtype=torch.float).to(device)       
+            e_feat = torch.tensor([arr[u,v] for u,v in zip(u_w_mat[0], u_w_mat[1])],dtype=torch.float).to(device)
+            # base node - target user
+            data_dict = {} #edge
+            num_nodes_dict = {} #num_node
+            node_feat_dict = {} #node_feat
+            edge_feat_dict = {} 
             
+            if self.config['rel_type'] == 'v':
+                data_dict[('v', 'vk', 'k')] = (u_w_mat[0],u_w_mat[1])
+                data_dict[('k', 'kv', 'v')] = (u_w_mat[1],u_w_mat[0])
+                num_nodes_dict['v'] = arr.shape[0]
+                node_feat_dict['v'] = v_feat
+                edge_feat_dict['vk'] = e_feat
+                edge_feat_dict['kv'] = e_feat
+            
+            elif self.config['rel_type'] == 'a':
+                data_dict[('a', 'ak', 'k')] = (u_w_mat[0],u_w_mat[1])
+                data_dict[('k', 'ka', 'a')] = (u_w_mat[1],u_w_mat[0])
+                num_nodes_dict['a'] = arr.shape[0]
+                node_feat_dict['a'] = a_feat
+                edge_feat_dict['ak'] = e_feat
+                edge_feat_dict['ka'] = e_feat
+                
+            elif self.config['rel_type'] == 'va':
+                data_dict[('v', 'vk', 'k')] = (u_w_mat[0],u_w_mat[1])
+                data_dict[('k', 'kv', 'v')] = (u_w_mat[1],u_w_mat[0])
+                num_nodes_dict['v'] = arr.shape[0]
+                node_feat_dict['v'] = v_feat
+                edge_feat_dict[('v', 'vk', 'k')] = e_feat
+                edge_feat_dict[('k', 'kv', 'v')] = e_feat
 
-                num_nodes_dict['k'] = arr.shape[1]
-                node_feat_dict['k'] = k_feat
+                data_dict[('a', 'ak', 'k')] = (u_w_mat[0],u_w_mat[1])
+                data_dict[('k', 'ka', 'a')] = (u_w_mat[1],u_w_mat[0])
+                num_nodes_dict['a'] = arr.shape[0]
+                node_feat_dict['a'] = a_feat
+                edge_feat_dict[('a', 'ak', 'k')] = e_feat
+                edge_feat_dict[('k', 'ka', 'a')] = e_feat
+        
+
+            num_nodes_dict['k'] = arr.shape[1]
+            node_feat_dict['k'] = k_feat
+            
+            #graph
+            g = dgl.heterograph(data_dict = data_dict,num_nodes_dict = num_nodes_dict).to(device)
+            g.ndata['features'] = node_feat_dict
+            
+            if self.config['edge_weight']:
+                g.edata['weights'] = edge_feat_dict
                 
-                #graph
-                g = dgl.heterograph(data_dict = data_dict,num_nodes_dict = num_nodes_dict).to(f"cuda:{device}")
-                g.ndata['features'] = node_feat_dict
-                
-                if self.config['edge_weight']:
-                    g.edata['weights'] = edge_feat_dict
-                    
-                graph_list.append(g)
-                pbar.update(1)
+            graph_list.append(g)
 
         return graph_list

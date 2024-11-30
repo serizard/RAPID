@@ -122,7 +122,13 @@ def create_feature_adjacency_matrices(dfs, disfluency_tokens, video_col, audio_c
     total_counts = defaultdict(int)
     
     print("Calculating global co-occurrence statistics...")
-    for df in tqdm(dfs):
+    try:
+        iterator = tqdm(dfs, desc="Processing datasets", position=0, leave=True)
+    except:
+        print("Warning: Progress bar disabled")
+        iterator = dfs
+        
+    for df in iterator:
         # 각 토큰의 출현 위치 확인
         token_positions = defaultdict(list)
         for i, token in enumerate(df['token'].values):
@@ -159,7 +165,7 @@ def create_feature_adjacency_matrices(dfs, disfluency_tokens, video_col, audio_c
     print("\nCreating adjacency matrices...")
     adj_matrices = []
     
-    for df in tqdm(dfs):
+    for df in iterator:
         seq_length = len(df)
         # 시퀀스 길이 x 토큰 수 크기의 인접 행렬
         adj_matrix = np.zeros((seq_length, n_tokens))

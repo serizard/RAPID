@@ -1,5 +1,5 @@
 # device
-gpu: cpu
+device: cpu
 
 # model
 random_seed: 2023
@@ -20,6 +20,8 @@ agg_type: bilstm
 hetero_type: min
 rel_type: va
 graphuse: True
+edge_weight: True
+update: True
 
 # paths
 keyword_path: D:/aphasia/MMATD/dataset/_disfluency_tk_300.json

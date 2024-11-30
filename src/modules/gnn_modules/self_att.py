@@ -39,10 +39,10 @@ class Attention(nn.Module):
                             .repeat(batch_size, 1, 1)  # (batch_size, hidden_size, 1)
                             )
 
-        attentions = torch.softmax(F.relu(weights.squeeze()), dim=-1) #F.relu # , dim=-1
-        
+        attentions = torch.softmax(F.relu(weights.squeeze(-1)), dim=-1) #F.relu # , dim=-1
+
         # create mask based on the sentence lengths
-        mask = torch.ones(attentions.size(), requires_grad=True).to(f"cuda:{self.device}")
+        mask = torch.ones(attentions.size(), requires_grad=True).to(self.device)
 
 
         # apply mask and renormalize attention scores (weights)

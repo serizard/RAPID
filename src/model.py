@@ -1,7 +1,7 @@
 import matplotlib
 matplotlib.use('Agg')
 
-from process_input import FrameExtractor, Transcriptor, GestureExtractor, AudioExtractor, chunk_dataset
+from process_input import WhisperManager, MediapipeManager, OpenSmileManager, chunk_dataset
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,8 +10,20 @@ from modules.gnn_modules.build_graph import *
 from modules.gnn_modules.graphconv import SAGEConv,HeteroGraphConv
 from modules.gnn_modules.self_att import Attention
 from modules.mult_modules.mulT import MULTModel
+import whisper_timestamped as whisper
 import yaml
 import json
+import cv2
+import numpy as np
+import pandas as pd
+from pathlib import Path
+import dgl
+import configparser
+from misc import add_special_tokens_to_features, create_feature_adjacency_matrices, audio_col, video_col
+from moviepy.editor import VideoFileClip
+from typing import Union
+import logging
+
 
 
 
@@ -21,7 +33,12 @@ class RAPIDModel(nn.Module):
 
         self.config = config
         self.seed = self.config['random_seed']
-        self.gpu = self.config['gpu'] if torch.cuda.is_available() else 'cpu'
+        self.device = self.config['device']
+        if self.device != 'cpu':
+            if torch.cuda.is_available() and isinstance(self.device, int):
+                self.device = f'cuda:{self.device}'
+            else:
+                raise ValueError('CUDA is not available or device is not an integer')
         
         self.chunk_size = self.config['chunk_size']
         
@@ -89,8 +106,8 @@ class RAPIDModel(nn.Module):
                              bidirectional=True,
                              batch_first=True)
         
-        self.v_atten = Attention(self.config['gpu'],int(self.v_hidden *2), batch_first=True)  # 2 is bidrectional
-        self.a_atten = Attention(self.config['gpu'],int(self.a_hidden *2), batch_first=True)  # 2 is bidrectional
+        self.v_atten = Attention(self.device,int(self.v_hidden *2), batch_first=True)  # 2 is bidrectional
+        self.a_atten = Attention(self.device,int(self.a_hidden *2), batch_first=True)  # 2 is bidrectional
         self.dropout = nn.Dropout(self.config['dropout'])
 
         # model & hidden
@@ -102,11 +119,11 @@ class RAPIDModel(nn.Module):
         self.fc1 = nn.Linear(self.t_hidden, int(self.t_hidden/2))
         self.fc2 = nn.Linear(int(self.t_hidden/2), self.output_dim)
 
-        self.frame_extractor = FrameExtractor()
-        self.transcriptor = Transcriptor(model_size='turbo', device=f'cuda:{self.gpu}' if self.gpu != 'cpu' else 'cpu')
-        self.gesture_extractor = GestureExtractor()
-        self.audio_extractor = AudioExtractor()
-
+        self.whisper_manager = None
+        self.frame_manager = None
+        self.gesture_manager = None
+        self.audio_manager = None
+        
         self._load_model()
 
 
@@ -121,9 +138,9 @@ class RAPIDModel(nn.Module):
     @torch.inference_mode()
     def forward_inference(self, txt, aud, vid, **kwargs):
         """
-        txt: (# of chunks, seq_len)
-        aud: (# of chunks, seq_len, audio_feature_dim)
-        vid: (# of chunks, seq_len, video_feature_dim)
+        txt: (1, seq_len)
+        aud: (1, seq_len, audio_feature_dim)
+        vid: (1, seq_len, video_feature_dim)
         """
         # 0. Input
         num_chunk, seq_ = txt.shape
@@ -198,47 +215,246 @@ class RAPIDModel(nn.Module):
     
     
     def extract_features(self, video_path):
-        transcription, audio_path = self.transcriptor.transcribe(video_path)
-        print(f'Transcription done')
-        self.frame_extractor.extract_frames(video_path)
-        print(f'Frames extracted')
-        text_bind = self.frame_extractor.align_frames(transcription)
-        print(f'Frames aligned')
-        opensmile_bind = self.audio_extractor.extract_opensmile_bind(text_bind, audio_path)
-        print(f'Opensmile features extracted')
-        pose_bind = self.gesture_extractor.extract_pose_bind(text_bind)
-        print(f'Pose features extracted')
+        features = {}
 
-        text_bind[self.txt_col] = text_bind[self.txt_col].map(lambda x: self.tokenizer.encode(
-            str(x),
-            padding = 'max_length',
-            max_length=self.args.max_length,
-            truncation=True,
-        ))
+        # 1. Transcription
+        audio_path = extract_audio(video_path)
+        audio = whisper.load_audio(audio_path)
+                
+        with WhisperManager(model_name="turbo", device=self.device) as whisper_model:
+            transcription = whisper.transcribe(
+                model=whisper_model,
+                audio=audio,
+                language="en",
+                detect_disfluencies=True,
+                condition_on_previous_text=False
+            )
+        print('Transcription done')
+        
+        # 2. Frame Extraction
+        cap = cv2.VideoCapture(video_path)
+        fps = round(cap.get(cv2.CAP_PROP_FPS))
+        hop = round(fps / 1)
+        frames = []
+        curr_frame = 0
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if curr_frame % hop == 0:
+                frames.append({
+                    'time': int(curr_frame // hop)+1,
+                    'frame': frame
+                })
+            curr_frame += 1
+        
+        cap.release()
+                
+        frame_times = [frame['time'] for frame in frames]
+        print('Frames extracted')
+        
+        # 3. Frame Alignment & Gesture Analysis
+        text_bind = pd.DataFrame()
+        pose_bind = pd.DataFrame()
+        with MediapipeManager() as holistic:
+            for segment in transcription["segments"]:
+                for word_info in segment["words"]:
+                    start_time = word_info["start"]
+                    end_time = word_info["end"]
+                    text = word_info["text"]
+                    
+                    closest_index = int(np.round(start_time)) if np.round(start_time) <= end_time else int(start_time)
+                    try:
+                        frame = frames[frame_times.index(closest_index)]["frame"]
+                    except:
+                        continue
+                        
+                    results = holistic.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                    pose_data = self._extract_pose_data(results, holistic)
+                    
+                    text_bind = pd.concat([text_bind, pd.DataFrame({
+                        'token': text,
+                        'start': start_time,
+                        'end': end_time
+                    }, index=[0])], ignore_index=True)
+                    
+                    pose_bind = pd.concat([pose_bind, pd.json_normalize(pose_data)], ignore_index=True)
+        
+        print('Frames aligned and pose extracted')
+        
+        # 4. Audio Feature Extraction
+        with OpenSmileManager() as smile:
+            zero_point = text_bind.iloc[0]['start']
+            opensmile_bind = pd.DataFrame()
+            
+            for _, token in text_bind.iterrows():
+                features = smile.process_file(
+                    audio_path,
+                    start=token['start']-zero_point,
+                    end=token['end']-zero_point
+                )
+                opensmile_bind = pd.concat([opensmile_bind, features], axis=0)
 
-        return text_bind, opensmile_bind, pose_bind
+        print('Opensmile features extracted')
 
+        text_bind.reset_index(drop=True, inplace=True)
+        pose_bind.reset_index(drop=True, inplace=True)
+        opensmile_bind.reset_index(drop=True, inplace=True)
+        
+        # Prepare final binds
+        pose_bind = pose_bind.interpolate()
+        audio_bind = opensmile_bind.interpolate()
+
+        print(len(text_bind), len(audio_bind), len(pose_bind))
+        text_bind.to_csv('D:/aphasia/MMATD/src/temp/text_bind.csv')
+
+
+        return text_bind, audio_bind, pose_bind
+
+
+    def _extract_pose_data(self, results, holistic):
+        """Helper method to extract pose data from mediapipe results"""
+        data = {}
+        if results.pose_landmarks:
+            for mark, data_point in zip(holistic.PoseLandmark, results.pose_landmarks.landmark):
+                data[f'{mark.name}_x'] = data_point.x
+                data[f'{mark.name}_y'] = data_point.y
+                data[f'{mark.name}_z'] = data_point.z
+        else:
+            for mark in holistic.PoseLandmark:
+                data[f'{mark.name}_x'] = np.nan
+                data[f'{mark.name}_y'] = np.nan
+                data[f'{mark.name}_z'] = np.nan
+        return data
 
     def predict(self, video_path):
-        text_bind, opensmile_bind, pose_bind = self.extract_features(video_path)
-        audio_feats, video_feats, audio_feats_with_additional_tokens, video_feats_with_additional_tokens, adj_matrices = chunk_dataset(text_bind, opensmile_bind, pose_bind)
-
-        if self.config['graphuse']:
-            self.g_list =build_graph(self.config, 
-                                    audio_feats,
-                                    video_feats, 
-                                    adj_matrices).data_load(self.gpu)
-
-        audio_feats_with_additional_tokens = np.nan_to_num(audio_feats_with_additional_tokens).astype('float64')
-        video_feats_with_additional_tokens = np.nan_to_num(video_feats_with_additional_tokens).astype('float64')
-
-        logits, att_vl, v_att_score = self.forward_inference(audio_feats_with_additional_tokens, video_feats_with_additional_tokens, text_bind[self.txt_col])
+        # Extract all features using context managers
+        text_bind, audio_bind, pose_bind = self.extract_features(video_path)
         
+        # Process features
+        audio_feats, video_feats, audio_feats_with_tokens, video_feats_with_tokens, adj_matrices, text_bind = chunk_dataset(text_bind, 
+                                                                                                                            audio_bind, 
+                                                                                                                            pose_bind, 
+                                                                                                                            chunk_size=self.chunk_size, 
+                                                                                                                            user='john', 
+                                                                                                                            sex='male',
+                                                                                                                           disfluency_tokens='D:/aphasia/MMATD/dataset/_disfluency_tk_300.json')
+        
+        text_bind = pd.DataFrame(text_bind)
+        # Tokenize text
+        text_bind[self.txt_col] = text_bind[self.txt_col].map(
+            lambda x: self.tokenizer.encode(
+                str(x),
+                padding='max_length',
+                max_length=self.chunk_size,
+                truncation=True,
+            )
+        )
+
+        # Build graph if needed
+        if self.config['graphuse']:
+            self.g_list = build_graph(
+                self.config,
+                audio_feats,
+                video_feats,
+                adj_matrices
+            ).data_load(self.device)
+        
+        # Handle NaN values
+        audio_feats_with_tokens = np.nan_to_num(audio_feats_with_tokens).astype('float64')
+        video_feats_with_tokens = np.nan_to_num(video_feats_with_tokens).astype('float64')
+
+        txt = torch.tensor(text_bind[self.txt_col], dtype=torch.long).to(self.device)
+        aud = torch.tensor(audio_feats_with_tokens, dtype=torch.float32).to(self.device)
+        vid = torch.tensor(video_feats_with_tokens, dtype=torch.float32).to(self.device)
+        
+        # Forward pass
+        # logits: (num_chunk, num_labels)
+        # att_vl: (num_chunk, chunk_size, chunk_size)
+        # v_att_score: (num_chunk, chunk_size+2)
+        logits, att_vl, v_att_score = self.forward_inference(txt, aud, vid)
+    
+        # Calculate prediction
         mean_logits = logits.mean(0)
         pred = mean_logits.argmax().item()
+    
+        np.save("D:/aphasia/MMATD/src/temp/att_vl.npy", att_vl.cpu().numpy())
+        np.save("D:/aphasia/MMATD/src/temp/v_att_score.npy", v_att_score.cpu().numpy())
 
         return pred, att_vl, v_att_score
-    
+        
+
+def extract_audio(
+    video_path: Union[str, Path],
+    sample_rate: int = 16000,
+    audio_channels: int = 1,
+    format: str = 'wav'
+) -> str:
+    try:
+        # 1. 경로 처리
+        video_path = Path(video_path)
+        if not video_path.exists():
+            raise FileNotFoundError(f"비디오 파일을 찾을 수 없습니다: {video_path}")
+            
+        audio_path = video_path.with_suffix(f'.{format}')
+        
+        # 2. 출력 디렉토리가 없다면 생성
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # 3. 비디오 로딩과 오디오 추출
+        try:
+            video = VideoFileClip(str(video_path))
+        except Exception as e:
+            raise ValueError(f"비디오 파일 로딩 실패: {str(e)}")
+            
+        if video.audio is None:
+            raise ValueError(f"비디오에 오디오 트랙이 없습니다: {video_path}")
+        
+        try:
+            # 오디오 속성 설정
+            audio = video.audio
+            audio.fps = sample_rate  # 샘플레이트 설정
+            
+            # 오디오 추출 및 저장
+            audio.write_audiofile(
+                str(audio_path),
+                fps=sample_rate,
+                nbytes=2,  # 16-bit audio
+                codec='pcm_s16le' if format == 'wav' else None,
+                ffmpeg_params=[
+                    '-ac', str(audio_channels),
+                    '-ar', str(sample_rate)
+                ] if format == 'wav' else None,
+                logger=None  # moviepy의 진행률 표시 비활성화
+            )
+        except Exception as e:
+            raise ValueError(f"오디오 추출 중 오류 발생: {str(e)}")
+        finally:
+            # 4. 리소스 정리
+            video.close()
+            
+        # 5. 출력 파일 생성 확인
+        if not audio_path.exists():
+            raise RuntimeError(f"오디오 파일이 생성되지 않았습니다: {audio_path}")
+            
+        if audio_path.stat().st_size == 0:
+            audio_path.unlink()  # 빈 파일 삭제
+            raise RuntimeError(f"생성된 오디오 파일이 비어있습니다: {audio_path}")
+            
+        return str(audio_path)
+        
+    except FileNotFoundError as e:
+        logging.error(f"파일 없음 에러: {str(e)}")
+        raise
+    except ValueError as e:
+        logging.error(f"처리 에러: {str(e)}")
+        raise
+    except Exception as e:
+        logging.error(f"예상치 못한 에러: {str(e)}")
+        raise
+
+
 # For debugging
 if __name__ == '__main__':
     config = configparser.ConfigParser()
@@ -247,6 +463,6 @@ if __name__ == '__main__':
     print('Starting...')
     model = RAPIDModel(config)
     print('Model loaded...')
-    pred, _, _ = model.predict('D:/aphasia/MMATD/src/example.mp4')
+    pred, att_vl, v_att_score = model.predict('D:/aphasia/MMATD/src/example.mp4')
     print(f'Prediction: {pred}')
     print('Prediction done...')
