@@ -7,8 +7,7 @@ data_preprocessing/*.json
 wandb/
 _result/
 capstone/
-demo/ckpt
-demo/*.wav
-demo/*.mp4
-demo/temp
-streamlit-app/temp
+src/ckpt
+src/*.mp3
+src/*.mp4
+dataset/*.txt

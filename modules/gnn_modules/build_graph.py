@@ -18,7 +18,6 @@ class build_graph:
 
         chunk_size = config['chunk_size']
         num_token = config['num_token']
-        stdmult = config['stdmult']
         
         self.config = config
         def historic_feat(feat):
