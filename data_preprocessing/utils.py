@@ -70,8 +70,8 @@ def get_labels(aphasia_type):
 def add_special_tokens_to_features(features):
     _, feature_dim = features.shape
     
-    cls_token = np.random.normal(0, 0.02, (1, feature_dim))
-    eos_token = np.random.normal(0, 0.02, (1, feature_dim))
+    cls_token = np.ones((1, feature_dim))
+    eos_token = -1 * np.ones((1, feature_dim))
     
     augmented_features = np.concatenate([cls_token, features, eos_token], axis=0)
     
@@ -112,92 +112,92 @@ def calculate_audio_changes(df, audio_col, z_score_threshold=1.0):
     return (changes > 0).astype(bool)
 
 
-def create_feature_adjacency_matrices(dfs, disfluency_tokens, video_col, audio_col, std_multiplier=1.5, base_weight=0.3):
-    """새로운 방식의 인접 행렬 생성"""
+def create_feature_adjacency_matrices(dfs, disfluency_tokens, video_col, audio_col):
+    """
+    Create feature adjacency matrices based on co-occurrence patterns between tokens and multimodal features
+    최적화된 numpy 연산 사용
+    
+    Args:
+        dfs: List of DataFrames containing aligned multimodal data
+        disfluency_tokens: List of disfluency-related keywords
+        video_col: List of gesture feature column names
+        audio_col: List of audio feature column names
+    
+    Returns:
+        np.ndarray: Stack of adjacency matrices for each sample
+    """
     n_samples = len(dfs)
     n_tokens = len(disfluency_tokens)
     
-    # 전체 데이터셋에 대한 co-occurrence 통계 계산
-    total_co_occurrences = defaultdict(int)
-    total_counts = defaultdict(int)
+    # 전체 데이터셋에 대한 통계를 미리 계산
+    # Token별 gesture/audio 특성의 평균값을 계산할 arrays
+    gesture_values = {token: [] for token in disfluency_tokens}
+    audio_values = {token: [] for token in disfluency_tokens}
     
-    print("Calculating global co-occurrence statistics...")
+    print("Computing token statistics...")
     for df in tqdm(dfs):
-        # 각 토큰의 출현 위치 확인
-        token_positions = defaultdict(list)
+        # 토큰 sequence를 one-hot encoding으로 변환
+        token_matrix = np.zeros((len(df), len(disfluency_tokens)))
         for i, token in enumerate(df['token'].values):
             if token.lower() in disfluency_tokens:
-                token_positions[token.lower()].append(i)
+                token_idx = disfluency_tokens.index(token.lower())
+                token_matrix[i, token_idx] = 1
         
-        # 제스처/오디오 변화 계산
-        gesture_changes = calculate_gesture_changes(df, video_col, std_multiplier)
-        audio_changes = calculate_audio_changes(df, audio_col)
+        # Gesture 특성들의 평균 계산
+        gesture_features = df[video_col].values
+        for j, token in enumerate(disfluency_tokens):
+            # 해당 토큰이 있는 프레임의 gesture 특성들
+            token_mask = token_matrix[:, j] == 1
+            if token_mask.any():
+                gesture_values[token].append(gesture_features[token_mask].mean(axis=1))
         
-        # Co-occurrence 계산
-        for token, positions in token_positions.items():
-            for pos in positions:
-                # 해당 토큰 주변 ±2 프레임 검사
-                start_idx = max(0, pos-2)
-                end_idx = min(len(df), pos+3)
-                window_gesture = gesture_changes[start_idx:end_idx]
-                window_audio = audio_changes[start_idx:end_idx]
-                
-                if np.any(window_gesture):
-                    total_co_occurrences[('gesture', token)] += 1
-                if np.any(window_audio):
-                    total_co_occurrences[('audio', token)] += 1
-                    
-                total_counts[token] += 1
+        # Audio 특성들의 평균 계산
+        audio_features = df[audio_col].values
+        for j, token in enumerate(disfluency_tokens):
+            token_mask = token_matrix[:, j] == 1
+            if token_mask.any():
+                audio_values[token].append(audio_features[token_mask].mean(axis=1))
     
-    # 정규화된 co-occurrence 가중치 계산
-    weights = {}
-    for (modality, token), count in total_co_occurrences.items():
-        if total_counts[token] > 0:
-            weights[(modality, token)] = count / total_counts[token]
+    # Weight 계산
+    print("\nComputing weights...")
+    gesture_weights = {}
+    audio_weights = {}
     
-    # 인접 행렬 생성
+    for token in disfluency_tokens:
+        # Gesture weights
+        if gesture_values[token]:
+            gesture_weights[token] = np.concatenate(gesture_values[token]).mean()
+        else:
+            gesture_weights[token] = 0.0
+            
+        # Audio weights    
+        if audio_values[token]:
+            audio_weights[token] = np.concatenate(audio_values[token]).mean()
+        else:
+            audio_weights[token] = 0.0
+    
+    # 인접 행렬 생성 (벡터화된 연산 사용)
     print("\nCreating adjacency matrices...")
     adj_matrices = []
     
     for df in tqdm(dfs):
-        seq_length = len(df)
-        # 시퀀스 길이 x 토큰 수 크기의 인접 행렬
-        adj_matrix = np.zeros((seq_length, n_tokens))
-        
-        # # 각 프레임에서의 변화 감지
-        # gesture_changes = calculate_gesture_changes(df, video_col, std_multiplier)
-        # audio_changes = calculate_audio_changes(df, audio_col)
-        
-        # 각 토큰의 출현과 변화를 연결
+        # 토큰 시퀀스를 one-hot matrix로 변환
+        token_matrix = np.zeros((len(df), n_tokens))
         for i, token in enumerate(df['token'].values):
             if token.lower() in disfluency_tokens:
                 token_idx = disfluency_tokens.index(token.lower())
-                
-                # 기본 가중치 할당
-                adj_matrix[i, token_idx] = base_weight
-                
-                # 현재 프레임 주변 ±2 프레임 검사
-                # start_idx = max(0, i-2)
-                # end_idx = min(seq_length, i+3)
-                # window_gesture = gesture_changes[start_idx:end_idx]
-                # window_audio = audio_changes[start_idx:end_idx]
-                
-                # 제스처나 오디오 변화가 있는 경우 추가 가중치 할당
-                additional_weight = weights.get(('gesture', token.lower()), 0) + weights.get(('audio', token.lower()), 0) - 1.7
-                additional_weight *= 100
-                # if np.any(window_gesture):
-                #     additional_weight += weights.get(('gesture', token.lower()), 0)
-                # if np.any(window_audio):
-                #     additional_weight += weights.get(('audio', token.lower()), 0)
-                
-                # 기존 가중치에 추가 가중치를 더함
-                adj_matrix[i, token_idx] += additional_weight
+                token_matrix[i, token_idx] = 1
         
+        # Weight matrix 생성
+        weight_matrix = np.zeros((n_tokens,))
+        for j, token in enumerate(disfluency_tokens):
+            weight_matrix[j] = gesture_weights[token] + audio_weights[token]
+        
+        # 최종 인접 행렬 계산 (행렬 곱을 통한 벡터화된 연산)
+        adj_matrix = token_matrix * weight_matrix
         adj_matrices.append(adj_matrix)
     
-    final_adj_matrices = np.stack(adj_matrices)
-    return final_adj_matrices
-
+    return np.stack(adj_matrices)
 
 
 video_col = ['NOSE_x', 'NOSE_y', 'NOSE_z', 'LEFT_EYE_INNER_x','LEFT_EYE_INNER_y', 'LEFT_EYE_INNER_z', 'LEFT_EYE_x', 'LEFT_EYE_y','LEFT_EYE_z', 

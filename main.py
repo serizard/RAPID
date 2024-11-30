@@ -21,7 +21,7 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset
 from torch.optim.lr_scheduler import ExponentialLR,CosineAnnealingWarmRestarts
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer, seed_everything
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import Callback
+from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 
 # transformer:
 from transformers import BertTokenizer, AdamW, BertModel, RobertaTokenizer,RobertaModel #XLNetTokenizer,XLNetModel,AutoFeatureExtractor
@@ -65,8 +65,8 @@ class Arg:
     test_mode: bool = False  # Test Mode enables `fast_dev_run`
     optimizer: str = 'AdamW'  # AdamW vs AdamP
     lr_scheduler: str = 'exp'  # ExponentialLR vs CosineAnnealingWarmRestarts
-    fp16: bool = False  # Enable train on FP16
-    batch_size: int = 32
+    fp16: bool = False # Enable train on FP16
+    batch_size: int = 16
     
     
 class Model(LightningModule):
@@ -297,7 +297,7 @@ class Model(LightningModule):
         
         
         # Stratified GroupKfold
-        kf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=self.seed)
+        kf = StratifiedGroupKFold(n_splits=10, shuffle=True, random_state=self.seed)
         for i,(train_idxs, test_idxs) in enumerate(kf.split(df, df['type_label'], df['user_name'])):
             if i == self.split:
                 break
@@ -396,7 +396,6 @@ class Model(LightningModule):
 
 
     def on_test_epoch_end(self):
-
         outputs = self.test_step_outputs
 
         # 모든 배치의 결과 합치기
@@ -481,7 +480,7 @@ def main(args,config):
 
     wandb.init(
         entity="serizard1005-sungkyunkwan-university",
-        project="capstone_ablation_new", 
+        project="capstone_train_final", 
         name=config['save'], 
         config=config,
         sync_tensorboard=True
@@ -489,7 +488,7 @@ def main(args,config):
 
     wandb_logger = WandbLogger(
         entity="serizard1005-sungkyunkwan-university",
-        project="capstone_ablation_new", 
+        project="capstone_train_final", 
         name=config['save'], 
         log_model=True,
         sync_tensorboard=True
@@ -506,13 +505,21 @@ def main(args,config):
         mode='min'
     )
 
+    checkpoint_callback = ModelCheckpoint(
+        monitor='train_loss',
+        dirpath='/workspace/ckpts',
+        filename=f'{config["save"]}'+'-{epoch:02d}-{train_loss:.2f}',
+        save_top_k=3,
+        mode='min',
+    )
+
     trainer = Trainer(
         logger = wandb_logger,
-        enable_checkpointing=False,
+        enable_checkpointing=True,
         max_epochs=args.epochs,
         fast_dev_run=args.test_mode,
         num_sanity_val_steps=None if args.test_mode else 0,
-        callbacks=[early_stop_callback],
+        callbacks=[early_stop_callback, checkpoint_callback],
         deterministic=False, # ensure full reproducibility from run to run you need to set seeds for pseudo-random generators,
         # For GPU Setup
         accelerator='gpu',
@@ -552,7 +559,7 @@ if __name__ == '__main__':
     parser.add_argument("--split", type=int, default=0) # 0~5 
     parser.add_argument("--chunk_size", type=int, default=80) 
     parser.add_argument("--y_col", type=str, default='type_label')  #label fre_label com_label
-    parser.add_argument("--num_labels", type=int, default=7)
+    parser.add_argument("--num_labels", type=int, default=4)
     parser.add_argument("--modal", type=str, default="t_a_v") # a, am, t, v
     parser.add_argument("--att", type=str, default="t_a_v") # a, am, t, v
     parser.add_argument("--embed_type", type=str, default="rb") 
@@ -571,7 +578,6 @@ if __name__ == '__main__':
     parser.add_argument("--use_gpu", action='store_true', default=True)
     parser.add_argument("--phase", type=str, choices=['train', 'test', 'train_test'], default='train')
     parser.add_argument("--checkpoint_path", type=str, default=None)
-    parser.add_argument("--stdmult", type=float, default=1.5)
     
     config = parser.parse_args()
     print(config)
