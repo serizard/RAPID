@@ -10,3 +10,5 @@ capstone/
 src/ckpt
 src/*.mp3
 src/*.mp4
+streamlit-app
+demo
