@@ -33,8 +33,8 @@ def render_result_screen():
         if st.button("Show Results", use_container_width=True):
             show_spinner()
             result = get_inference_result(st.session_state.video_path)
-            st.session_state.results = result
-            st.session_state.prediction = result["prediction"]
-            st.session_state.logit_values = softmax(result["logits"])
+            labels = ['Control', 'Fluent', 'Non_Comprehensive', 'Non_Fluent']
+            st.session_state.prediction = labels[int(result["prediction"])]
+            st.session_state.logit_values = dict(zip(labels, softmax(result["logits"])))
             st.session_state.page = "pdf"
             st.rerun()

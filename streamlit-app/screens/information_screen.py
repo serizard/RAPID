@@ -27,5 +27,6 @@ def render_information_screen():
                 "birth_year": birth_year,
                 "gender": gender
             }
+            # st.session_state.page = "record"
             st.session_state.page = "record"
             st.rerun()

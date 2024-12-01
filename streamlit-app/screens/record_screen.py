@@ -221,7 +221,7 @@ def save_recording(frame_sync):
                         codec='libx264',
                         preset='medium',
                         remove_temp=True,
-                        write_logfile=True,
+                        write_logfile=False,
                         fps=FPS
                     )
                     
