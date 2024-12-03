@@ -13,3 +13,4 @@ demo/*.mp4
 demo/temp
 streamlit-app/temp
 rapid-api-server/checkpoints
+.env
