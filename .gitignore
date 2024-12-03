@@ -12,3 +12,4 @@ demo/*.wav
 demo/*.mp4
 demo/temp
 streamlit-app/temp
+rapid-api-server/checkpoints

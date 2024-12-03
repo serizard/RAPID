@@ -1,0 +1,27 @@
+# device
+device: 0
+
+# model
+random_seed: 2023
+chunk_size: 50
+y_col: type_label
+num_labels: 4
+dropout: 0.01
+loss: cross
+modal: t_a_v
+att: t_a_v
+hidden:
+  t: 768
+  a: 25
+  v: 69
+  x: 0
+num_token: 150
+agg_type: bilstm
+hetero_type: min
+rel_type: va
+graphuse: True
+edge_weight: True
+update: True
+
+# paths
+keyword_path: /workspace/MMATD/rapid-api-server/app/models/_disfluency_tk_300.json
