@@ -1,4 +1,8 @@
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class Config:
     BASE_PATH = Path(__file__).parent
@@ -7,7 +11,7 @@ class Config:
     BRAIN_IMAGE_PATH = ASSET_PATH / "images/thought.png"
     CSS_PATH = BASE_PATH / "app.css"
     FONT_PATH = BASE_PATH / "fonts/NanumGothic-regular.ttf"
-    OPENAI_API_KEY = "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"  # Move to environment variable
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     INFERENCE_API_KEY = "695f9eb5021752735066a7d14fa166fa5007ff6a2dcaee6b8dae9cb4a4a69b09"
 
     STORY_PAGES = [
