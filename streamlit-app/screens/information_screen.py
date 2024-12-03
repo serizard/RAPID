@@ -28,5 +28,6 @@ def render_information_screen():
                 "gender": gender
             }
             # st.session_state.page = "record"
-            st.session_state.page = "record"
+            st.session_state.video_path = 'D:/aphasia/MMATD/streamlit-app/temp/final_video.mp4'
+            st.session_state.page = "result"
             st.rerun()

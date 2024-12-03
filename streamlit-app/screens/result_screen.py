@@ -36,5 +36,7 @@ def render_result_screen():
             labels = ['Control', 'Fluent', 'Non_Comprehensive', 'Non_Fluent']
             st.session_state.prediction = labels[int(result["prediction"])]
             st.session_state.logit_values = dict(zip(labels, softmax(result["logits"])))
+            st.session_state.highlight_timestamp = result["highlight_timestamp"]
+            st.session_state.all_tokens = result["all_tokens"]
             st.session_state.page = "pdf"
             st.rerun()
