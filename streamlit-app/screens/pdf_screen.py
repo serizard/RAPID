@@ -1,51 +1,3 @@
-# import streamlit as st
-# from datetime import datetime
-# import openai
-# from components.navigation import render_navbar, create_back_button
-# from config import Config
-# from react_components import medical_report
-
-
-# def render_pdf_screen():
-#     render_navbar()
-#     create_back_button("result")
-    
-#     st.markdown('<div class="instruction-header">📄 Diagnostic Report</div>', 
-#                 unsafe_allow_html=True)
-    
-#     user_info = st.session_state.get("user_info", {
-#         "name": "John Doe",
-#         "birth_year": 1977,
-#         "gender": "Male"
-#     })
-    
-#     current_year = datetime.now().year
-#     age = current_year - user_info["birth_year"]
-    
-#     openai.api_key = Config.OPENAI_API_KEY
-    
-#     # Logit values for both OpenAI report and React component
-#     logit_values = st.session_state.get("logit_values", {'Control': 0.6, 'Fluent': 0.2, 'Non-Comprehensive': 0.1, 'Non-Fluent': 0.1})
-#     prediction = st.session_state.get("prediction", "Control")
-
-
-#     try:
-#         # React 컴포넌트를 위한 데이터 준비
-#         patient_info = {
-#             "name": user_info["name"],
-#             "birthYear": user_info["birth_year"],
-#             "gender": user_info["gender"],
-#             "prediction": prediction,
-#             "logit_values": logit_values,
-#             "diagnosisDate": datetime.now().strftime('%Y-%m-%d')
-#         }
-        
-#         # React 컴포넌트 렌더링
-#         medical_report(patient_info)
-        
-#     except Exception as e:
-#         st.error(f"Error generating report: {str(e)}")
-
 
 import streamlit as st
 from datetime import datetime
@@ -70,7 +22,7 @@ def render_video_section():
         st.session_state.score_manager.initialize(st.session_state.all_tokens)
         
         try:
-            video_path = 'D:/aphasia/MMATD/streamlit-app/temp/final_video.mp4'
+            video_path = st.session_state.video_path
             max_score = max(st.session_state.all_tokens['importance'])
             
             # Create warning placeholder
@@ -126,10 +78,31 @@ def render_pdf_screen():
     render_navbar()
     create_back_button("result")
     
-    # Set up layout with two columns
-    col1, col2 = st.columns([1, 1], gap="medium")
+    # Set up layout with two rows instead of columns
+    row1_container = st.container()
+    row2_container = st.container()
     
-    with col1:
+    # Add CSS for container heights
+    st.markdown("""
+        <style>
+        .video-section {
+            min-height: 600px;  # 비디오 섹션 최소 높이
+            margin-bottom: 2rem;
+        }
+        .report-section {
+            min-height: 800px;  # 리포트 섹션 최소 높이
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Video Section
+    with row1_container:
+        st.markdown('<div class="video-section">', unsafe_allow_html=True)
+        render_video_section()
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+
+    with row2_container:
         st.markdown('<div class="instruction-header">📄 Diagnostic Report</div>', 
                    unsafe_allow_html=True)
         
@@ -163,6 +136,3 @@ def render_pdf_screen():
             
         except Exception as e:
             st.error(f"Error generating report: {str(e)}")
-
-    with col2:
-        render_video_section()

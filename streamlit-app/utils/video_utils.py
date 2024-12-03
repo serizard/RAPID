@@ -1,99 +1,3 @@
-# import streamlit as st
-# import streamlit.components.v1 as components
-# from pathlib import Path
-# import base64
-
-# def get_video_base64(video_path):
-#     with open(video_path, 'rb') as f:
-#         data = f.read()
-#         return base64.b64encode(data).decode()
-
-# def video_player_with_time_tracking(video_path):
-#     if 'current_time' not in st.session_state:
-#         st.session_state.current_time = 0.0
-    
-#     if video_path and Path(video_path).exists():
-#         video_base64 = get_video_base64(video_path)
-        
-#         html_code = f"""
-#         <body>
-#             <video id="myVideo" width="100%" controls>
-#                 <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
-#             </video>
-#             <div id="timeDisplay"></div>
-            
-#             <script>
-#                 var video = document.getElementById('myVideo');
-#                 var timeDisplay = document.getElementById('timeDisplay');
-                
-#                 function sendTimeToStreamlit(time) {{
-#                     window.Streamlit.setComponentValue(time);
-#                 }}
-                
-#                 function updateTime() {{
-#                     var currentTime = video.currentTime;
-#                     timeDisplay.textContent = '현재 시간: ' + currentTime.toFixed(1) + '초';
-#                     sendTimeToStreamlit(currentTime);
-#                 }}
-                
-#                 // 실시간 업데이트
-#                 video.ontimeupdate = updateTime;
-                
-#                 // 추가 이벤트 리스너
-#                 video.addEventListener('play', updateTime);
-#                 video.addEventListener('pause', updateTime);
-#                 video.addEventListener('seeked', updateTime);
-                
-#                 // 주기적 업데이트 (백업)
-#                 setInterval(updateTime, 100);
-#             </script>
-#         </body>
-#         """
-
-#         current_time = components.html(html_code, height=450)
-#         if current_time is not None:
-#             try:
-#                 st.session_state.current_time = float(current_time)
-#                 importance_scores = yield_importance_scores(st.session_state.all_tokens, current_time)
-#             except:
-#                 pass
-
-# def yield_importance_scores(all_tokens, current_time):
-#     for i, (start, end) in enumerate(zip(all_tokens['start'], all_tokens['end'])):
-#         if start <= current_time <= end:
-#             yield all_tokens['importance'][i]
-
-# def main():
-#     st.title("비디오 플레이어")
-#     video_path = 'D:/aphasia/MMATD/streamlit-app/temp/final_video.mp4'
-    
-#     col1, col2 = st.columns([3, 1])
-    
-#     with col1:
-#         try:
-#             video_player_with_time_tracking(video_path)
-#         except Exception as e:
-#             st.error(f"비디오 재생 오류: {str(e)}")
-    
-#     with col2:
-#         if st.button("현재 시간 북마크", key="bookmark_btn"):
-#             if 'bookmarks' not in st.session_state:
-#                 st.session_state.bookmarks = []
-#             current_time = getattr(st.session_state, 'current_time', 0.0)
-#             st.session_state.bookmarks.append(current_time)
-#             st.experimental_rerun()
-        
-#         if 'bookmarks' in st.session_state and st.session_state.bookmarks:
-#             st.write("북마크:")
-#             for i, bookmark in enumerate(st.session_state.bookmarks, 1):
-#                 st.write(f"{i}. {bookmark:.1f}초")
-
-# if __name__ == "__main__":
-#     main()
-
-
-
-
 import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
@@ -209,6 +113,12 @@ def video_player_with_risk_tracking(
     max_score: float = 1.0
 ):
     if video_path and Path(video_path).exists():
+        # Initialize session state for tracking time and score if not exists
+        if 'video_time' not in st.session_state:
+            st.session_state.video_time = 0.0
+        if 'video_score' not in st.session_state:
+            st.session_state.video_score = 0.0
+
         video_base64 = get_video_base64(video_path)
         
         html_code = f"""
@@ -222,11 +132,17 @@ def video_player_with_risk_tracking(
                 var video = document.getElementById('myVideo');
                 var riskIndicator = document.getElementById('riskIndicator');
                 var riskValue = document.getElementById('riskValue');
+                var riskText = document.getElementById('riskText');
                 let lastTime = 0;
                 
-                function updateRiskVisualization(score) {{
+                // Initialize elements
+                riskValue.textContent = '위험도: 0.00';
+                riskText.textContent = '정상';
+                riskText.style.backgroundColor = 'rgba(0,128,0,0.8)';
+                
+                function updateRiskVisualization(time) {{
+                    const score = {max_score} * (1 - Math.abs(Math.sin(time / 2))); // 임시 점수 계산
                     const normalizedScore = score / {max_score};
-                    const riskText = document.getElementById('riskText');
                     
                     // Update gradient bar opacity
                     riskIndicator.style.opacity = normalizedScore;
@@ -250,20 +166,19 @@ def video_player_with_risk_tracking(
                     }}
                 }}
                 
-                function sendTimeToStreamlit(time) {{
-                    const roundedTime = Math.round(time * 10) / 10;
-                    if (roundedTime !== lastTime) {{
-                        lastTime = roundedTime;
-                        window.Streamlit.setComponentValue(roundedTime);
+                function sendTimeToStreamlit(currentTime) {{
+                    if (currentTime !== lastTime) {{
+                        lastTime = currentTime;
+                        updateRiskVisualization(currentTime);
+                        window.Streamlit.setComponentValue({{
+                            time: currentTime,
+                            type: 'time_update'
+                        }});
                     }}
                 }}
                 
                 function updateTime() {{
                     sendTimeToStreamlit(video.currentTime);
-                    
-                    // Update visualization
-                    const score = {max_score} * (1 - Math.abs(Math.sin(video.currentTime / 2)));
-                    updateRiskVisualization(score);
                 }}
                 
                 video.ontimeupdate = updateTime;
@@ -278,27 +193,32 @@ def video_player_with_risk_tracking(
         </div>
         """
 
-        current_time = components.html(html_code, height=450)
+        # Render video component
+        value = components.html(html_code, height=450)
         
         try:
-            if current_time is not None:
-                current_time = float(current_time)
-                st.session_state.current_time = current_time
+            if isinstance(value, dict) and 'time' in value:
+                current_time = float(value['time'])
                 current_score = score_manager.get_score(current_time)
-                st.session_state.current_score = current_score
                 
-                return {"time": current_time, "score": current_score}
+                st.session_state.video_time = current_time
+                st.session_state.video_score = current_score
                 
+                return {
+                    "time": current_time,
+                    "score": current_score
+                }
         except Exception as e:
             st.error(f"Error processing time update: {str(e)}")
-        
-        if hasattr(st.session_state, 'current_time') and hasattr(st.session_state, 'current_score'):
-            return {
-                "time": st.session_state.current_time,
-                "score": st.session_state.current_score
-            }
+        except Exception as e:
+            st.error(f"Unexpected error: {str(e)}")
             
-        return None
+        # Return last known values from session state
+        return {
+            "time": st.session_state.video_time,
+            "score": st.session_state.video_score
+        }
+
 
 def render_warning_box(warning_placeholder, risk_level: float, max_risk: float = 1.0):
     """Display a warning box based on the current risk level"""
