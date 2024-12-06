@@ -4,7 +4,7 @@ from datetime import datetime
 import openai
 from components.navigation import render_navbar, create_back_button
 from config import Config
-from react_components import medical_report
+from components.react_components import medical_report
 from utils.video_utils import (
     ImportanceScoreManager, 
     video_player_with_risk_tracking,
@@ -32,7 +32,9 @@ def render_video_section():
             player_status = video_player_with_risk_tracking(
                 video_path,
                 st.session_state.score_manager,
-                max_score=max_score
+                max_score=max_score,
+                width = 640,      # 픽셀 단위의 너비
+                height = 360      # 픽셀 단위의 높이
             )
             
             if player_status:
@@ -121,6 +123,10 @@ def render_pdf_screen():
                                           {'Control': 0.6, 'Fluent': 0.2, 
                                            'Non-Comprehensive': 0.1, 'Non-Fluent': 0.1})
         prediction = st.session_state.get("prediction", "Control")
+        timestamp = st.session_state.get("highlight_timestamp", (80,90))
+        # tokens = st.session_state.get("all_tokens")
+        import json
+        tokens = json.load(open('D:/aphasia/all_tokens_example.json'))
 
         try:
             patient_info = {
@@ -129,7 +135,9 @@ def render_pdf_screen():
                 "gender": user_info["gender"],
                 "prediction": prediction,
                 "logit_values": logit_values,
-                "diagnosisDate": datetime.now().strftime('%Y-%m-%d')
+                "diagnosisDate": datetime.now().strftime('%Y-%m-%d'),
+                "timestamp": timestamp,
+                "tokens": tokens
             }
             
             medical_report(patient_info)

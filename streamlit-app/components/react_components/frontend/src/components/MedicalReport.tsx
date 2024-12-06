@@ -1,5 +1,5 @@
 import React from 'react';
-import { PieChart, Pie, Cell } from 'recharts';
+import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer  } from 'recharts';
 import AphasiaTypeAnalysis from './AphasiaTypeAnalysis';
 import RiskAssessment from './RiskAssessment'; 
 import {
@@ -21,6 +21,13 @@ interface CustomLabelProps {
   index: number;
 }
 
+interface Token {
+  token: string;
+  start: number;
+  end: number;
+  importance: number;
+}
+
 interface PatientInfoProps {
   name: string;
   birthYear: number;
@@ -29,10 +36,12 @@ interface PatientInfoProps {
   logit_values: {
     Control: number;
     Fluent: number;
-    Non_Comprehensive: number;  // 수정
-    Non_Fluent: number;  // 수정
+    Non_Comprehensive: number;
+    Non_Fluent: number;
   };
   diagnosisDate: string;
+  timestamp: [number,number]; // 필요한 타입으로 수정
+  tokens: Token[]; // Token 타입의 배열
 }
 
 interface DiagnosisDataItem {
@@ -56,6 +65,15 @@ class MedicalReport extends StreamlitComponentBase<State> {
         "Non_Fluent": 0.1  // 수정
       },
       diagnosisDate: "2024-11-25",
+      timestamp: [150,160],
+      tokens: [
+        {
+          token: "was",
+          start: 0.0,
+          end: 0.5,
+          importance: 0.0
+        }
+      ]
     };
 
     const logit_values = patientInfo.logit_values || {
@@ -158,19 +176,19 @@ class MedicalReport extends StreamlitComponentBase<State> {
       {/* Diagnosis Result Section */}
 <div className="bg-white shadow-lg rounded-lg p-6 mb-8">
  <h2 className="text-xl text-blue-600 font-bold mb-4">Diagnosis Result</h2>
- <div className="grid grid-cols-2 gap-4">
-   <div className="flex justify-center">
-     <PieChart width={400} height={300}>  
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+   <div className="flex flex-col items-center justify-center">
+     <PieChart width={300} height={250}>  
        <Pie
          data={diagnosisData}
          cx={150}         
-         cy={150}
+         cy={125}
          innerRadius={45} 
          outerRadius={75}
          label={(props) => {
            const { cx, cy, midAngle, innerRadius, outerRadius, value, index } = props;
            const RADIAN = Math.PI / 180;
-           const radius = outerRadius * 1.4;
+           const radius = outerRadius + 20;
            const x = cx + radius * Math.cos(-midAngle * RADIAN);
            const y = cy + radius * Math.sin(-midAngle * RADIAN);
            const formattedValue = Number(value).toFixed(2);
@@ -182,7 +200,7 @@ class MedicalReport extends StreamlitComponentBase<State> {
                fill="#333"
                textAnchor={x > cx ? 'start' : 'end'}
                dominantBaseline="central"
-               fontSize={12}
+               fontSize={8}
              >
                {`${diagnosisData[index].name}: ${value}`}
              </text>
@@ -196,16 +214,13 @@ class MedicalReport extends StreamlitComponentBase<State> {
        </Pie>
      </PieChart>
    </div>
-   <div className="flex justify-center items-center relative">
-     <div className="absolute left-0 h-40 w-px bg-gray-300"></div>
+   <div className="flex items-center justify-center px-4">
      <div className="text-center">
        {(() => {
-         // value를 기준으로 내림차순 정렬
          const sortedData = [...diagnosisData]
-           .filter(item => item.name !== 'Control') // Control 제외
+           .filter(item => item.name !== 'Control')
            .sort((a, b) => b.value - a.value);
 
-         // 가장 높은 값과 나머지 값들 구하기
          const primary = sortedData[0];
          const secondary = sortedData.slice(1, 3);
 
@@ -228,8 +243,8 @@ class MedicalReport extends StreamlitComponentBase<State> {
 </div>
 
       {/* Analysis Section and Risk Assessment Grid */}
-      <div className="grid grid-cols-2 gap-8 mb-8">
-  <div>
+<div className="space-y-8 mb-8">
+  <div className="w-full">
     <AphasiaTypeAnalysis
       logits={{
         Control: diagnosisData[0].value,
@@ -239,43 +254,77 @@ class MedicalReport extends StreamlitComponentBase<State> {
       }}
     />
   </div>
-  <RiskAssessment diagnosisData={diagnosisData} />
+  <div className="w-full">
+    <RiskAssessment diagnosisData={diagnosisData} />
+  </div>
 </div>
 
       {/* Detailed Examination Section */}
-      <div className="bg-white shadow-lg rounded-lg p-6 mb-8">
-        <h2 className="text-xl text-blue-600 font-bold mb-4">Detailed Examination</h2>
-        <div className="space-y-4">
-          {/* Communication Method */}
-          <div>
-            <p className="font-bold">1. Communication Method</p>
-            <div className="flex justify-between items-center mt-2 p-2 bg-gray-50 rounded">
-              <p>You: </p>
-              <p className="ml-4">~</p>
-              <p className="ml-auto">Was it difficult to understand?</p>
-            </div>
-            <div className="flex justify-between items-center mt-2 p-2 bg-gray-50 rounded">
-              <p>Patient: </p>
-              <p className="ml-4">~</p>
-            </div>
-          </div>
-          {/* Language Testing */}
-          <div className="mt-4">
-            <p className="font-bold">2. Language Testing</p>
-            <div className="flex justify-between items-center mt-2 p-2 bg-gray-50 rounded">
-              <p>You: </p>
-              <p className="ml-4">~</p>
-            </div>
-            <div className="flex justify-between items-center mt-2 p-2 bg-gray-50 rounded">
-              <p>Patient: </p>
-              <p className="ml-4">~</p>
-            </div>
-          </div>
-        </div>
-      </div>
+<div className="bg-white shadow-lg rounded-lg p-6 mb-8">
+  <h2 className="text-xl text-blue-600 font-bold mb-4">Detailed Examination</h2>
+  
+  {/* Importance Graph */}
+  <div className="mb-6">
+    <div className="w-full" style={{ height: '400px' }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={patientInfo.tokens.map((token, index) => ({
+            name: token.start.toFixed(2),
+            importance: token.importance,
+            token: token.token
+          }))}
+          margin={{ top: 20, right: 30, left: 40, bottom: 20 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis 
+            dataKey="name" 
+            label={{ value: 'Time (seconds)', position: 'bottom', offset: 0 }}
+            tick={{ fontSize: 12 }}
+          />
+          <YAxis 
+            label={{ 
+              value: 'Importance', 
+              angle: -90, 
+              position: 'insideLeft',
+              offset: -10
+            }}
+            tick={{ fontSize: 12 }}
+            domain={[0, 'auto']}
+          />
+          <Tooltip
+            formatter={(value: any, name: any, props: any) => [
+              `Importance: ${Number(value).toFixed(4)}`,
+              `Token: ${props.payload.token}`
+            ]}
+          />
+          <Line 
+            type="monotone" 
+            dataKey="importance" 
+            stroke="#8884d8" 
+            dot={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+
+  {/* Analysis Explanations - 기존과 동일 */}
+  <div className="space-y-4">
+    <div className="p-4 bg-blue-50 rounded-lg">
+      <p className="text-gray-800">
+        The graph above is a visualization of the scores that the point-in-time model thinks are important in determining aphasia. You can see the degree to which the model pays attention, that is, which sections are considered to have the most important influence in determining aphasia.
+      </p>
+    </div>
+    <div className="p-4 bg-blue-50 rounded-lg">
+      <p className="text-gray-800">
+        As a result of the analysis, the highest risk interval is between <span className="text-red-600 font-bold">{patientInfo.timestamp[0]} ~ {patientInfo.timestamp[1]}</span> seconds. Watch the video and see!
+      </p>
+    </div>
+  </div>
+</div>
 
       {/* Recommendations and Conclusion Grid */}
-<div className="grid grid-cols-2 gap-8 mb-8">
+<div className="space-y-8 mb-8">
   <div className="bg-white shadow-lg rounded-lg p-6">
     <h2 className="text-xl text-blue-600 font-bold mb-4">Recommendations</h2>
     <div className="space-y-6">
@@ -315,23 +364,22 @@ class MedicalReport extends StreamlitComponentBase<State> {
     </div>
   </div>
 
-  {/* Conclusion Section */}
-<div className="bg-white shadow-lg rounded-lg p-6">
- <h2 className="text-xl text-blue-600 font-bold mb-4">Conclusion</h2>
- <div className="p-4 bg-gray-50 rounded-lg">
-   {diagnosisData[3].value >= 0.7 ? (
-     <p className="text-gray-700">
-       Your aphasia rate appears to be somewhat low. You may rest assured! 
-       However, if you want a more professional and accurate judgment, you may visit the hospital.
-     </p>
-   ) : (
-     <p className="text-gray-700">
-       It seems that the aphasia rate is somewhat high. 
-       It is recommended that you visit a nearby hospital for a professional and more accurate diagnosis.
-     </p>
-   )}
- </div>
-</div>
+  <div className="bg-white shadow-lg rounded-lg p-6">
+    <h2 className="text-xl text-blue-600 font-bold mb-4">Conclusion</h2>
+    <div className="p-4 bg-gray-50 rounded-lg">
+      {diagnosisData[3].value >= 0.7 ? (
+        <p className="text-gray-700">
+          Your aphasia rate appears to be somewhat low. You may rest assured! 
+          However, if you want a more professional and accurate judgment, you may visit the hospital.
+        </p>
+      ) : (
+        <p className="text-gray-700">
+          It seems that the aphasia rate is somewhat high. 
+          It is recommended that you visit a nearby hospital for a professional and more accurate diagnosis.
+        </p>
+      )}
+    </div>
+  </div>
 </div>
 
       {/* Footer */}

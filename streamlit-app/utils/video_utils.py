@@ -110,10 +110,11 @@ def create_risk_indicator_html(max_score: float) -> str:
 def video_player_with_risk_tracking(
     video_path: str,
     score_manager: ImportanceScoreManager,
-    max_score: float = 1.0
+    max_score: float = 1.0,
+    width: int = 640,      # 픽셀 단위의 너비
+    height: int = 360      # 픽셀 단위의 높이
 ):
     if video_path and Path(video_path).exists():
-        # Initialize session state for tracking time and score if not exists
         if 'video_time' not in st.session_state:
             st.session_state.video_time = 0.0
         if 'video_score' not in st.session_state:
@@ -122,8 +123,12 @@ def video_player_with_risk_tracking(
         video_base64 = get_video_base64(video_path)
         
         html_code = f"""
-        <div style="position: relative;">
-            <video id="myVideo" width="100%" controls>
+        <div style="position: relative; width: {width}px; margin: 0 auto;">
+            <video 
+                id="myVideo" 
+                style="width: {width}px; height: {height}px; object-fit: contain;"
+                controls
+            >
                 <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
             </video>
             {create_risk_indicator_html(max_score)}
@@ -193,8 +198,8 @@ def video_player_with_risk_tracking(
         </div>
         """
 
-        # Render video component
-        value = components.html(html_code, height=450)
+        # Render video component with more extra space
+        value = components.html(html_code, height=height + 100)  # 컨트롤러와 위험도 표시를 위한 여유 공간 증가
         
         try:
             if isinstance(value, dict) and 'time' in value:
