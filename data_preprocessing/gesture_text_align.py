@@ -22,7 +22,7 @@ def extract_gesture_images(transcript_path, video_metadata):
     
     os.makedirs(save_dir, exist_ok=True)
 
-    video_path = transcript_path.replace("transcripts", "video_clips").replace("json", "mp4").replace('/remake_dataset', '')
+    video_path = transcript_path.replace("transcripts", "video_clips").replace("json", "mp4")
     inv_timestamps = video_metadata['/' + video_name]['timestamp_inv']
 
     cap = cv2.VideoCapture(video_path)
@@ -88,8 +88,8 @@ def extract_gesture_images(transcript_path, video_metadata):
         json.dump(txt_img_paths, f, indent=2)
 
 if __name__ == "__main__":
-    video_metadata = load_video_metadata('D:/aphasia/MMATD/data_preprocessing/video_metadata.json')
-    transcript_paths = glob('D:/aphasia/dataset/remake_dataset/transcripts/*.json')
+    video_metadata = load_video_metadata('/workspace/RAPID/data_preprocessing/video_metadata.json')
+    transcript_paths = glob('/workspace/dataset/transcripts/*.json')
     with tqdm(total=len(transcript_paths), desc="Extracting gesture images") as pbar:
         for transcript_path in transcript_paths:
             try:

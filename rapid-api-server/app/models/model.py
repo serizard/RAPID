@@ -25,11 +25,6 @@ from typing import Union
 import logging
 
 
-import matplotlib.pyplot as plt
-import numpy as np
-from scipy.interpolate import make_interp_spline
-
-
 class RAPIDModel(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -202,8 +197,7 @@ class RAPIDModel(nn.Module):
         txt_h = self.model(input_ids =txt)
         
         # 3. Multimodal Fusion Encoder
-        with torch.cuda.amp.autocast():
-            relation_h, _, att_ls = self.MULTModel(txt_h[0], aud_h, vid_h)
+        relation_h, _, att_ls = self.MULTModel(txt_h[0], aud_h, vid_h)
         last_h_l = txt_h[1] + relation_h
         
         # 5 Integrated Gradients
@@ -219,28 +213,25 @@ class RAPIDModel(nn.Module):
         )
         
         chunk_scores = torch.norm(attributions, p=2, dim=1) # shape: [batch_size]
-        chunk_scores = F.softmax(chunk_scores, dim=0) # shape: [batch_size]
+        chunk_scores = F.softmax(chunk_scores - chunk_scores.max(), dim=0) # shape: [batch_size]
         
         # 6. Token-level importance scores
         token_scores = []
-        max_att_values = []
-
-        for i in range(num_chunk):
-            chunk_att = att_ls[i]
-            token_importance = chunk_att.mean(dim=1)
-            max_att_values.append(token_importance.max().item())
 
         for i in range(num_chunk):
             chunk_att = att_ls[i] # shape: [chunk_size, chunk_size]
-            token_importance = chunk_att.mean(dim=1) 
+            chunk_size = chunk_att.size(0)
+            position_weights = torch.linspace(1.5, 0.5, chunk_size, device=chunk_att.device)
+            token_importance = (chunk_att * position_weights.unsqueeze(1)).mean(dim=0)
             
-            token_importance = (token_importance - token_importance.min()) / \
-                            (token_importance.max() - token_importance.min())
+            token_importance = (token_importance - token_importance.mean()) / (token_importance.std() + 1e-8)
             
             weighted_importance = token_importance * chunk_scores[i]
             token_scores.append(weighted_importance)
 
-        all_token_scores = F.softmax(torch.cat(token_scores), dim=0) * 100
+        all_token_scores = F.softmax(torch.cat(token_scores), dim=0)
+        all_token_scores = torch.clamp(all_token_scores * 100, min=0.0, max=100.0)
+        print(all_token_scores)
 
         return logits[0], all_token_scores
 
@@ -269,22 +260,13 @@ class RAPIDModel(nn.Module):
 
         # Find best window
         for i in range(num_tokens - window_size + 1):
-            peak = all_token_scores[i:i+window_size].max().item()
             importance_sum = all_token_scores[i:i+window_size].sum()
 
-            # Update best peak
-            if peak > best_peak:
-                best_peak = peak
+            # Update best importance sum
+            if importance_sum > best_importance_sum:
                 best_importance_sum = importance_sum
                 best_start = self.all_tokens_with_timestamp.iloc[i]['start']
                 best_end = self.all_tokens_with_timestamp.iloc[i+window_size-1]['end']
-            elif peak == best_peak:
-                # Update best importance sum
-                if importance_sum > best_importance_sum:
-                    best_peak = peak
-                    best_importance_sum = importance_sum
-                    best_start = self.all_tokens_with_timestamp.iloc[i]['start']
-                    best_end = self.all_tokens_with_timestamp.iloc[i+window_size-1]['end']
 
         return (best_start, best_end)
 
@@ -404,7 +386,8 @@ class RAPIDModel(nn.Module):
     def predict(self, video_path):
         # Extract all features using context managers
         text_bind, audio_bind, pose_bind = self.extract_features(video_path)
-        
+        print(f"Text length: {len(text_bind)}, Audio length: {len(audio_bind)}, Video length: {len(pose_bind)}")
+
         # Process features
         audio_feats, video_feats, audio_feats_with_tokens, video_feats_with_tokens, adj_matrices, text_bind = chunk_dataset(text_bind, 
                                                                                                                             audio_bind, 
@@ -448,10 +431,8 @@ class RAPIDModel(nn.Module):
 
         pred = logits.argmax().item()
         highlight_timestamp = self.detect_highlights(token_scores)
-    
         return logits, pred, highlight_timestamp, self.all_tokens_with_timestamp
         
-
 
 def extract_audio(
     video_path: Union[str, Path],
@@ -460,17 +441,13 @@ def extract_audio(
     format: str = 'wav'
 ) -> str:
     try:
-        # 1. 경로 처리
         video_path = Path(video_path)
         if not video_path.exists():
             raise FileNotFoundError(f"비디오 파일을 찾을 수 없습니다: {video_path}")
             
         audio_path = video_path.with_suffix(f'.{format}')
-        
-        # 2. 출력 디렉토리가 없다면 생성
         audio_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # 3. 비디오 로딩과 오디오 추출
         try:
             video = VideoFileClip(str(video_path))
         except Exception as e:
@@ -480,34 +457,30 @@ def extract_audio(
             raise ValueError(f"비디오에 오디오 트랙이 없습니다: {video_path}")
         
         try:
-            # 오디오 속성 설정
             audio = video.audio
-            audio.fps = sample_rate  # 샘플레이트 설정
+            audio.fps = sample_rate
             
-            # 오디오 추출 및 저장
             audio.write_audiofile(
                 str(audio_path),
                 fps=sample_rate,
-                nbytes=2,  # 16-bit audio
+                nbytes=2, 
                 codec='pcm_s16le' if format == 'wav' else None,
                 ffmpeg_params=[
                     '-ac', str(audio_channels),
                     '-ar', str(sample_rate)
                 ] if format == 'wav' else None,
-                logger=None  # moviepy의 진행률 표시 비활성화
+                logger=None 
             )
         except Exception as e:
             raise ValueError(f"오디오 추출 중 오류 발생: {str(e)}")
         finally:
-            # 4. 리소스 정리
             video.close()
             
-        # 5. 출력 파일 생성 확인
         if not audio_path.exists():
             raise RuntimeError(f"오디오 파일이 생성되지 않았습니다: {audio_path}")
             
         if audio_path.stat().st_size == 0:
-            audio_path.unlink()  # 빈 파일 삭제
+            audio_path.unlink() 
             raise RuntimeError(f"생성된 오디오 파일이 비어있습니다: {audio_path}")
             
         return str(audio_path)
@@ -522,15 +495,19 @@ def extract_audio(
         logging.error(f"예상치 못한 에러: {str(e)}")
         raise
 
-
 # For debugging
 if __name__ == '__main__':
     config = configparser.ConfigParser()
-    with open('/workspace/MMATD/rapid-api-server/config/config.yaml', 'r') as file:
+    with open('/workspace/RAPID/rapid-api-server/config/config.yaml', 'r') as file:
         config = yaml.safe_load(file)
     print('Starting...')
-    model = RAPIDModel(config)
+    model = RAPIDModel(config).to('cuda')
+    model.load_state_dict(torch.load('/workspace/RAPID/rapid-api-server/checkpoints/model.ckpt', map_location='cuda')['state_dict'], strict=False)
     print('Model loaded...')
-    pred, att_vl, v_att_score = model.predict('/workspace/dataset/final_video.mp4')
-    print(f'Prediction: {pred}')
+    logits, pred, highlight_timestamp, all_tokens = model.predict('/workspace/dataset/final_video.mp4')
+    
+    print(f'Logits: {logits}')
+    print(f'Predicted class: {pred}')
+    print(f'highlight_timestamp: {highlight_timestamp}')
+    print(f'Prediction: {pred}') 
     print('Prediction done...')

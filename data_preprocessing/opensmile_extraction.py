@@ -10,7 +10,7 @@ import tempfile
 import warnings
 warnings.filterwarnings("ignore")
 
-ex_df = pd.read_csv('D:/aphasia/dataset/remake_dataset/paths.csv')
+ex_df = pd.read_csv('/workspace/dataset/paths.csv')
 
 smile = opensmile.Smile(
     feature_set=opensmile.FeatureSet.eGeMAPSv02,
@@ -18,7 +18,7 @@ smile = opensmile.Smile(
     num_workers=multiprocessing.cpu_count()*2
 )
 
-opensmile_file_list = glob('D:/aphasia/dataset/remake_dataset/tokens/opensmile_bind/*/*.json')
+opensmile_file_list = glob('/workspace/dataset/tokens/opensmile_bind/*/*.json')
 
 # 임시 파일을 저장할 디렉토리 생성
 temp_dir = "temp_wav_files"
@@ -65,4 +65,4 @@ for row1 in tqdm(ex_df.itertuples(), total=len(ex_df)):
         continue
 
 ex_df['opensmile_path'] = opensmile_file_list
-ex_df.to_csv('D:/aphasia/dataset/paths_opensmile_added.csv', index=False)
+ex_df.to_csv('/workspace/dataset/paths_opensmile_added.csv', index=False)

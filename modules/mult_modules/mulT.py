@@ -6,7 +6,7 @@ from .transformerEncoder import TransformerEncoder
 
 
 class MULTModel(nn.Module):
-    def __init__(self, config,file_path, use_origin = False):
+    def __init__(self, config, use_origin = False):
         """
         Construct a MulT model.
         """
@@ -15,11 +15,11 @@ class MULTModel(nn.Module):
         self.tonly,self.aonly,self.vonly= config['att'].split('_')
         
         if use_origin:
-            self.orig_d_l, self.orig_d_a, self.orig_d_v = [int(file_path['hidden'][self.t])] *3
+            self.orig_d_l, self.orig_d_a, self.orig_d_v = [int(config['hidden'][self.t])] *3
         else:
-            self.orig_d_l = int(file_path['hidden'][self.t])
-            self.orig_d_a = int(file_path['hidden'][self.a])*6
-            self.orig_d_v = int(file_path['hidden'][self.v])*6
+            self.orig_d_l = int(config['hidden'][self.t])
+            self.orig_d_a = int(config['hidden'][self.a])*6
+            self.orig_d_v = int(config['hidden'][self.v])*6
         
         self.d_l, self.d_a, self.d_v = 50, 50, 50  #30, 30, 30
         
@@ -44,7 +44,7 @@ class MULTModel(nn.Module):
         else:
             combined_dim = 2 * (self.d_l + self.d_a + self.d_v)
         
-        output_dim = int(file_path['hidden'][self.t])#config['num_labels'] #hyp_params.output_dim        # This is actually not a hyperparameter :-)
+        output_dim = int(config['hidden'][self.t])#config['num_labels'] #hyp_params.output_dim        # This is actually not a hyperparameter :-)
 
         # 1. Temporal convolutional layers
         self.proj_l = nn.Conv1d(self.orig_d_l, self.d_l, kernel_size=1, padding=0, bias=False)
@@ -118,6 +118,7 @@ class MULTModel(nn.Module):
             # (V,A) --> L
             h_l_with_al, att_with_al = self.trans_l_with_a(proj_x_l, proj_x_a, proj_x_a)    # Dimension (L, N, d_l)
             h_l_with_vl, att_with_vl = self.trans_l_with_v(proj_x_l, proj_x_v, proj_x_v)    # Dimension (L, N, d_l)
+            combined_att = (att_with_al + att_with_vl) / 2
             h_ls = torch.cat([h_l_with_al, h_l_with_vl], dim=2)
             h_ls, att_ls = self.trans_l_mem(h_ls)
             if type(h_ls) == tuple:
@@ -150,9 +151,7 @@ class MULTModel(nn.Module):
         # A residual block
         last_hs_proj = self.proj2(F.dropout(F.relu(self.proj1(last_hs)), p=self.out_dropout, training=self.training))
         last_hs_proj += last_hs
-        
         output = self.out_layer(last_hs_proj)
-        return output,last_hs_proj, att_with_vl # output, last_hs
+        return output,last_hs_proj, att_ls # output, last_hs
 
     #################
-    
