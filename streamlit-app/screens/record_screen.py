@@ -13,7 +13,7 @@ from typing import List
 from scipy import interpolate
 import threading
 import shutil
-import os
+import ffmpeg
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -200,9 +200,8 @@ def save_recording(frame_sync):
                 logger.info("Loading audio clip...")
                 audio_clip = AudioFileClip(str(paths["audio"]))
                 
-                # 오디오 길이에 맞춰 비디오 속도 조정
                 logger.info(f"Original - Video duration: {video_clip.duration}, Audio duration: {audio_clip.duration}")
-                if abs(video_clip.duration - audio_clip.duration) > 0.1:  # 0.1초 이상 차이나면 조정
+                if abs(video_clip.duration - audio_clip.duration) > 0.1: 
                     speed_factor = video_clip.duration / audio_clip.duration
                     video_clip = video_clip.speedx(speed_factor)
                     logger.info(f"Adjusted - Video duration: {video_clip.duration} (speed factor: {speed_factor:.2f}x)")
@@ -213,8 +212,6 @@ def save_recording(frame_sync):
                 logger.info("Writing final video file...")
                 temp_output = paths["final"].parent / f"temp_output.mp4"
                 
-                # ffmpeg-python 직접 사용
-                import ffmpeg
                 try:
                     final_clip.write_videofile(
                         str(temp_output),
@@ -225,7 +222,6 @@ def save_recording(frame_sync):
                         fps=FPS
                     )
                     
-                    # ffmpeg로 오디오 추가
                     stream = ffmpeg.input(str(temp_output))
                     audio_stream = ffmpeg.input(str(paths["audio"]))
                     stream = ffmpeg.output(
@@ -234,7 +230,7 @@ def save_recording(frame_sync):
                         str(paths["final"]),
                         acodec='aac',
                         audio_bitrate='192k',
-                        vcodec='copy'  # 비디오는 그대로 복사
+                        vcodec='copy'  
                     )
                     ffmpeg.run(stream, overwrite_output=True)
                     
@@ -333,7 +329,6 @@ def render_record_screen():
                             st.session_state.page = "result"
                             st.experimental_rerun()
 
-        # Status message
         if ctx.state.playing:
             if recording_state["is_recording"]:
                 status_container.info("녹화 중...")
@@ -345,3 +340,4 @@ def render_record_screen():
     except Exception as e:
         logger.error("Error in render_record_screen: %s", str(e), exc_info=True)
         st.error(f"Error: {str(e)}")
+

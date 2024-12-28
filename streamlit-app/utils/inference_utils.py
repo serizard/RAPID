@@ -21,7 +21,7 @@ def get_inference_result(video_path, url="http://localhost:8000/predict"):
         return result
         
     except requests.exceptions.RequestException as e:
-        print(f"API 호출 중 오류 발생: {e}")
+        print(f"Error occurred during API call: {e}")
         raise
     finally:
         files["file"][1].close() 

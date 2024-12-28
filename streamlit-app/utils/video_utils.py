@@ -2,79 +2,38 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
 import base64
-import pandas as pd
-import numpy as np
+import json
 from typing import Dict, List, Tuple
 
-class ImportanceScoreManager:
-    def __init__(self):
-        self._cache: Dict[float, float] = {}
-        self._sorted_timestamps: List[Tuple[float, float]] = []
-    
-    def initialize(self, tokens_df: pd.DataFrame):
-        """Initialize the manager with tokens dataframe"""
-        # Convert to sorted list of tuples for efficient lookup
-        self._sorted_timestamps = sorted(
-            zip(tokens_df['start'], tokens_df['end'], tokens_df['importance']),
-            key=lambda x: x[0]
-        )
-        self._cache.clear()
-    
-    def get_score(self, current_time: float) -> float:
-        """Get importance score for current timestamp with caching"""
-        # Check cache first
-        if current_time in self._cache:
-            return self._cache[current_time]
-        
-        # Binary search for the relevant time segment
-        left, right = 0, len(self._sorted_timestamps) - 1
-        while left <= right:
-            mid = (left + right) // 2
-            start, end, score = self._sorted_timestamps[mid]
-            
-            if start <= current_time <= end:
-                self._cache[current_time] = score
-                return score
-            elif current_time < start:
-                right = mid - 1
-            else:
-                left = mid + 1
-                
-        return 0.0  # Default score if no matching segment found
-
 def get_video_base64(video_path: str) -> str:
+    """Encode video file to base64"""
     with open(video_path, 'rb') as f:
         data = f.read()
         return base64.b64encode(data).decode()
 
-def create_risk_indicator_html(max_score: float) -> str:
-    """
-    Create HTML/CSS for the risk indicator that shows aphasia risk level
-    Returns HTML string with two components:
-    1. A gradient bar at the top that changes opacity based on risk
-    2. A text indicator showing the numeric risk score
-    """
+def create_attention_indicator_html(max_score: float) -> str:
+    """Generate HTML/CSS for attention indicator"""
     return """
         <div style="position: relative;">
-            <!-- Risk level gradient bar -->
-            <div id="riskIndicator" style="
+            <!-- Attention level gradient bar -->
+            <div id="attentionIndicator" style="
                 position: absolute;
                 top: 0;
                 left: 0;
                 width: 100%;
                 height: 8px;
                 background: linear-gradient(to right, 
-                    rgba(0,255,0,0.7) 0%, 
-                    rgba(255,255,0,0.7) 50%, 
-                    rgba(255,0,0,0.7) 100%
+                    rgba(220,220,220,0.7) 0%, 
+                    rgba(100,149,237,0.7) 50%, 
+                    rgba(0,0,139,0.7) 100%
                 );
                 opacity: 0;
                 transition: opacity 0.3s;
                 border-radius: 4px;
             "></div>
             
-            <!-- Risk score display -->
-            <div id="riskValue" style="
+            <!-- Attention score display -->
+            <div id="attentionValue" style="
                 position: absolute;
                 top: 15px;
                 right: 15px;
@@ -89,8 +48,8 @@ def create_risk_indicator_html(max_score: float) -> str:
                 z-index: 1000;
             "></div>
             
-            <!-- Risk level text display -->
-            <div id="riskText" style="
+            <!-- Attention level text display -->
+            <div id="attentionText" style="
                 position: absolute;
                 top: 15px;
                 left: 15px;
@@ -107,18 +66,36 @@ def create_risk_indicator_html(max_score: float) -> str:
         </div>
     """
 
-def video_player_with_risk_tracking(
+def video_player_with_attention_tracking(
     video_path: str,
-    score_manager: ImportanceScoreManager,
-    max_score: float = 1.0,
-    width: int = 640,      # 픽셀 단위의 너비
-    height: int = 360      # 픽셀 단위의 높이
+    tokens_data: Dict[str, List],
+    width: int = 640,
+    height: int = 360,
+    max_score: float = 1.0
 ):
+    """
+    Create video player with attention tracking feature
+    
+    Parameters:
+    video_path: str - Path to video file
+    tokens_data: Dict[str, List] - Token data dictionary {'token': [], 'start': [], 'end': [], 'importance': []}
+    width: int - Video player width (pixels)
+    height: int - Video player height (pixels)
+    max_score: float - Maximum attention score
+    """
     if video_path and Path(video_path).exists():
         if 'video_time' not in st.session_state:
             st.session_state.video_time = 0.0
         if 'video_score' not in st.session_state:
             st.session_state.video_score = 0.0
+
+        # Generate time-based score data
+        score_data = sorted(
+            [[float(start), float(end), float(importance)] 
+             for start, end, importance in zip(tokens_data['start'], tokens_data['end'], tokens_data['importance'])],
+            key=lambda x: x[0]
+        )
+        score_data_json = json.dumps(score_data)
 
         video_base64 = get_video_base64(video_path)
         
@@ -131,50 +108,68 @@ def video_player_with_risk_tracking(
             >
                 <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
             </video>
-            {create_risk_indicator_html(max_score)}
+            {create_attention_indicator_html(max_score)}
             
             <script>
+                const scoreData = {score_data_json};
+                
+                function getScore(currentTime) {{
+                    let left = 0;
+                    let right = scoreData.length - 1;
+                    
+                    while (left <= right) {{
+                        const mid = Math.floor((left + right) / 2);
+                        const [start, end, score] = scoreData[mid];
+                        
+                        if (start <= currentTime && currentTime <= end) {{
+                            return score;
+                        }} else if (currentTime < start) {{
+                            right = mid - 1;
+                        }} else {{
+                            left = mid + 1;
+                        }}
+                    }}
+                    
+                    return 0.0;
+                }}
+
                 var video = document.getElementById('myVideo');
-                var riskIndicator = document.getElementById('riskIndicator');
-                var riskValue = document.getElementById('riskValue');
-                var riskText = document.getElementById('riskText');
+                var attentionIndicator = document.getElementById('attentionIndicator');
+                var attentionValue = document.getElementById('attentionValue');
+                var attentionText = document.getElementById('attentionText');
                 let lastTime = 0;
                 
                 // Initialize elements
-                riskValue.textContent = '위험도: 0.00';
-                riskText.textContent = '정상';
-                riskText.style.backgroundColor = 'rgba(0,128,0,0.8)';
+                attentionValue.textContent = 'Attention: 0.00';
+                attentionText.textContent = 'Normal';
+                attentionText.style.backgroundColor = 'rgba(220,220,220,0.8)';
                 
-                function updateRiskVisualization(time) {{
-                    const score = {max_score} * (1 - Math.abs(Math.sin(time / 2))); // 임시 점수 계산
+                function updateAttentionVisualization(time) {{
+                    const score = getScore(time);
                     const normalizedScore = score / {max_score};
                     
-                    // Update gradient bar opacity
-                    riskIndicator.style.opacity = normalizedScore;
+                    attentionIndicator.style.opacity = normalizedScore;
+                    attentionValue.textContent = `Attention: ${{score.toFixed(2)}}`;
                     
-                    // Update numeric score
-                    riskValue.textContent = `위험도: ${{score.toFixed(2)}}`;
-                    
-                    // Update colors and text based on risk level
                     if (score < {max_score/3}) {{
-                        riskValue.style.backgroundColor = 'rgba(0,128,0,0.8)';
-                        riskText.textContent = '정상';
-                        riskText.style.backgroundColor = 'rgba(0,128,0,0.8)';
+                        attentionValue.style.backgroundColor = 'rgba(220,220,220,0.8)';
+                        attentionText.textContent = 'Normal';
+                        attentionText.style.backgroundColor = 'rgba(220,220,220,0.8)';
                     }} else if (score < {max_score*2/3}) {{
-                        riskValue.style.backgroundColor = 'rgba(255,165,0,0.8)';
-                        riskText.textContent = '주의';
-                        riskText.style.backgroundColor = 'rgba(255,165,0,0.8)';
+                        attentionValue.style.backgroundColor = 'rgba(100,149,237,0.8)';
+                        attentionText.textContent = 'Notable';
+                        attentionText.style.backgroundColor = 'rgba(100,149,237,0.8)';
                     }} else {{
-                        riskValue.style.backgroundColor = 'rgba(255,0,0,0.8)';
-                        riskText.textContent = '위험';
-                        riskText.style.backgroundColor = 'rgba(255,0,0,0.8)';
+                        attentionValue.style.backgroundColor = 'rgba(0,0,139,0.8)';
+                        attentionText.textContent = 'Focus';
+                        attentionText.style.backgroundColor = 'rgba(0,0,139,0.8)';
                     }}
                 }}
                 
                 function sendTimeToStreamlit(currentTime) {{
                     if (currentTime !== lastTime) {{
                         lastTime = currentTime;
-                        updateRiskVisualization(currentTime);
+                        updateAttentionVisualization(currentTime);
                         window.Streamlit.setComponentValue({{
                             time: currentTime,
                             type: 'time_update'
@@ -198,13 +193,12 @@ def video_player_with_risk_tracking(
         </div>
         """
 
-        # Render video component with more extra space
-        value = components.html(html_code, height=height + 100)  # 컨트롤러와 위험도 표시를 위한 여유 공간 증가
+        value = components.html(html_code, height=height + 100)
         
         try:
             if isinstance(value, dict) and 'time' in value:
                 current_time = float(value['time'])
-                current_score = score_manager.get_score(current_time)
+                current_score = getScore(current_time, score_data)
                 
                 st.session_state.video_time = current_time
                 st.session_state.video_score = current_score
@@ -215,21 +209,31 @@ def video_player_with_risk_tracking(
                 }
         except Exception as e:
             st.error(f"Error processing time update: {str(e)}")
-        except Exception as e:
-            st.error(f"Unexpected error: {str(e)}")
             
-        # Return last known values from session state
         return {
             "time": st.session_state.video_time,
             "score": st.session_state.video_score
         }
 
+def getScore(current_time: float, score_data: List[List[float]]) -> float:
+    left, right = 0, len(score_data) - 1
+    while left <= right:
+        mid = (left + right) // 2
+        start, end, score = score_data[mid]
+        
+        if start <= current_time <= end:
+            return score
+        elif current_time < start:
+            right = mid - 1
+        else:
+            left = mid + 1
+            
+    return 0.0
 
-def render_warning_box(warning_placeholder, risk_level: float, max_risk: float = 1.0):
-    """Display a warning box based on the current risk level"""
-    if risk_level > max_risk * 0.66:
-        warning_placeholder.error("⚠️ 높은 위험 구간: 해당 구간에서 실어증 징후가 강하게 감지되었습니다.")
-    elif risk_level > max_risk * 0.33:
-        warning_placeholder.warning("⚠️ 중간 위험 구간: 실어증 관련 특징이 일부 감지되었습니다.")
-    elif risk_level > 0:
-        warning_placeholder.info("ℹ️ 낮은 위험 구간: 정상 범위 내 발화가 감지되었습니다.")
+def render_attention_box(attention_placeholder, attention_level: float, max_attention: float = 1.0):
+    if attention_level > max_attention * 0.66:
+        attention_placeholder.info("🔍 High Focus Area: Model shows high attention to speech in this segment.")
+    elif attention_level > max_attention * 0.33:
+        attention_placeholder.info("👀 Notable Area: Model is closely analyzing speech in this segment.")
+    elif attention_level > 0:
+        attention_placeholder.info("ℹ️ Normal Area: Model is performing baseline analysis.")

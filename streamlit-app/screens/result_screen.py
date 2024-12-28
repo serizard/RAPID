@@ -32,11 +32,17 @@ def render_result_screen():
     with col2:
         if st.button("Show Results", use_container_width=True):
             show_spinner()
+
             result = get_inference_result(st.session_state.video_path)
             labels = ['Control', 'Fluent', 'Non_Comprehensive', 'Non_Fluent']
             st.session_state.prediction = labels[int(result["prediction"])]
             st.session_state.logit_values = dict(zip(labels, softmax(result["logits"])))
             st.session_state.highlight_timestamp = result["highlight_timestamp"]
             st.session_state.all_tokens = result["all_tokens"]
+            print(st.session_state.all_tokens)
             st.session_state.page = "pdf"
+
+            print('prediction:', st.session_state.prediction, '\n')
+            print('logit_values:', st.session_state.logit_values ,' \n')
+            print('highlight_timestamp:', st.session_state.highlight_timestamp, '\n')
             st.rerun()

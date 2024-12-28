@@ -27,8 +27,5 @@ def render_information_screen():
                 "birth_year": birth_year,
                 "gender": gender
             }
-            # st.session_state.page = "record"
-            st.session_state.video_path = 'D:/aphasia/MMATD/streamlit-app/temp/final_video.mp4'
-            st.session_state.video_path = "D:/aphasia/dataset/video_clips/wright86a.mp4"
-            st.session_state.page = "result"
+            st.session_state.page = "record"
             st.rerun()

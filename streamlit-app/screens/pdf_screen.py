@@ -6,20 +6,14 @@ from components.navigation import render_navbar, create_back_button
 from config import Config
 from components.react_components import medical_report
 from utils.video_utils import (
-    ImportanceScoreManager, 
-    video_player_with_risk_tracking,
-    render_warning_box
+    video_player_with_attention_tracking,
+    render_attention_box
 )
 def render_video_section():
     st.markdown('<div class="instruction-header">🎥 Speech Analysis</div>', 
                 unsafe_allow_html=True)
     
-    # Initialize video player components
-    if 'score_manager' not in st.session_state:
-        st.session_state.score_manager = ImportanceScoreManager()
-    
     if 'all_tokens' in st.session_state:
-        st.session_state.score_manager.initialize(st.session_state.all_tokens)
         
         try:
             video_path = st.session_state.video_path
@@ -29,17 +23,17 @@ def render_video_section():
             warning_placeholder = st.empty()
             
             # Run video player
-            player_status = video_player_with_risk_tracking(
+            player_status = video_player_with_attention_tracking(
                 video_path,
-                st.session_state.score_manager,
+                tokens_data=st.session_state.all_tokens,
                 max_score=max_score,
-                width = 640,      # 픽셀 단위의 너비
-                height = 360      # 픽셀 단위의 높이
+                width = 640,  
+                height = 360  
             )
             
             if player_status:
                 current_score = player_status["score"]
-                render_warning_box(warning_placeholder, current_score, max_score)
+                render_attention_box(warning_placeholder, current_score, max_score)
             
             # Bookmarks section
             with st.expander("🔖 북마크된 구간"):
@@ -80,24 +74,21 @@ def render_pdf_screen():
     render_navbar()
     create_back_button("result")
     
-    # Set up layout with two rows instead of columns
     row1_container = st.container()
     row2_container = st.container()
     
-    # Add CSS for container heights
     st.markdown("""
         <style>
         .video-section {
-            min-height: 600px;  # 비디오 섹션 최소 높이
+            min-height: 600px;  
             margin-bottom: 2rem;
         }
         .report-section {
-            min-height: 800px;  # 리포트 섹션 최소 높이
+            min-height: 800px; 
         }
         </style>
     """, unsafe_allow_html=True)
     
-    # Video Section
     with row1_container:
         st.markdown('<div class="video-section">', unsafe_allow_html=True)
         render_video_section()
@@ -124,9 +115,7 @@ def render_pdf_screen():
                                            'Non-Comprehensive': 0.1, 'Non-Fluent': 0.1})
         prediction = st.session_state.get("prediction", "Control")
         timestamp = st.session_state.get("highlight_timestamp", (80,90))
-        # tokens = st.session_state.get("all_tokens")
-        import json
-        tokens = json.load(open('D:/aphasia/all_tokens_example.json'))
+        tokens = st.session_state.get("all_tokens")
 
         try:
             patient_info = {
