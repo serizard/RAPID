@@ -38,7 +38,7 @@ class build_graph:
         self.u_w = adj_matrices[:,:,:num_token] # (n_samples, n_nodes, n_disfluency)
         self.u_w = MinMaxScaler().fit_transform(self.u_w.reshape(self.u_w.shape[0], -1)).reshape(self.u_w.shape) # (n_samples, n_nodes, n_disfluency)
         
-        self.k_feat = np.load('D:/aphasia/MMATD/dataset/disfluency_keywords_feat.npy')[:num_token]
+        self.k_feat = np.load('/workspace/RAPID/dataset/disfluency_keywords_feat.npy')[:num_token]
 
         
         print(self.u_w.shape, self.a_feat.shape, self.v_feat.shape, self.k_feat.shape)

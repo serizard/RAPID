@@ -18,7 +18,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import dgl
-import configparser
 from misc import add_special_tokens_to_features, create_feature_adjacency_matrices, audio_col, video_col
 from moviepy.editor import VideoFileClip
 from typing import Union
@@ -200,13 +199,13 @@ class RAPIDModel(nn.Module):
         
         # 3. Multimodal Fusion Encoder
         with torch.cuda.amp.autocast():
-            relation_h,_, att_vl =self.MULTModel(txt_h[0], aud_h, vid_h) # 32 x 20
+            relation_h,_, att_ls =self.MULTModel(txt_h[0], aud_h, vid_h) # 32 x 20
         last_h_l = txt_h[1]+relation_h
         
         # 4. Aphasia Type Detection
         logits = self.fc2(F.relu(self.fc1(last_h_l)))
 
-        return logits,att_vl,v_att_score
+        return logits,att_ls,v_att_score
 
     def _load_model(self):
         state_dict = torch.load(self.config['checkpoint_path'], map_location='cpu')['state_dict']
@@ -371,18 +370,15 @@ class RAPIDModel(nn.Module):
         
         # Forward pass
         # logits: (num_chunk, num_labels)
-        # att_vl: (num_chunk, chunk_size, chunk_size)
+        # att_ls: (num_chunk, chunk_size, chunk_size)d
         # v_att_score: (num_chunk, chunk_size+2)
-        logits, att_vl, v_att_score = self.forward_inference(txt, aud, vid)
+        logits, att_ls, v_att_score = self.forward_inference(txt, aud, vid)
     
         # Calculate prediction
         mean_logits = logits.mean(0)
         pred = mean_logits.argmax().item()
-    
-        np.save("D:/aphasia/MMATD/src/temp/att_vl.npy", att_vl.cpu().numpy())
-        np.save("D:/aphasia/MMATD/src/temp/v_att_score.npy", v_att_score.cpu().numpy())
 
-        return pred, att_vl, v_att_score
+        return pred, att_ls, v_att_score
         
 
 def extract_audio(
@@ -392,31 +388,25 @@ def extract_audio(
     format: str = 'wav'
 ) -> str:
     try:
-        # 1. 경로 처리
         video_path = Path(video_path)
         if not video_path.exists():
-            raise FileNotFoundError(f"비디오 파일을 찾을 수 없습니다: {video_path}")
+            raise FileNotFoundError(f"No video file found: {video_path}")
             
         audio_path = video_path.with_suffix(f'.{format}')
-        
-        # 2. 출력 디렉토리가 없다면 생성
         audio_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # 3. 비디오 로딩과 오디오 추출
         try:
             video = VideoFileClip(str(video_path))
         except Exception as e:
-            raise ValueError(f"비디오 파일 로딩 실패: {str(e)}")
+            raise ValueError(f"Failed to load a video: {str(e)}")
             
         if video.audio is None:
-            raise ValueError(f"비디오에 오디오 트랙이 없습니다: {video_path}")
+            raise ValueError(f"No audio track in a video: {video_path}")
         
         try:
-            # 오디오 속성 설정
             audio = video.audio
-            audio.fps = sample_rate  # 샘플레이트 설정
+            audio.fps = sample_rate 
             
-            # 오디오 추출 및 저장
             audio.write_audiofile(
                 str(audio_path),
                 fps=sample_rate,
@@ -426,43 +416,25 @@ def extract_audio(
                     '-ac', str(audio_channels),
                     '-ar', str(sample_rate)
                 ] if format == 'wav' else None,
-                logger=None  # moviepy의 진행률 표시 비활성화
+                logger=None 
             )
         except Exception as e:
-            raise ValueError(f"오디오 추출 중 오류 발생: {str(e)}")
+            raise ValueError(f"Error occurred during audio extraction: {str(e)}")
         finally:
-            # 4. 리소스 정리
             video.close()
             
-        # 5. 출력 파일 생성 확인
         if not audio_path.exists():
-            raise RuntimeError(f"오디오 파일이 생성되지 않았습니다: {audio_path}")
+            raise RuntimeError(f"No audio file generated: {audio_path}")
             
         if audio_path.stat().st_size == 0:
-            audio_path.unlink()  # 빈 파일 삭제
-            raise RuntimeError(f"생성된 오디오 파일이 비어있습니다: {audio_path}")
+            audio_path.unlink()
+            raise RuntimeError(f"Empty audio file: {audio_path}")
             
         return str(audio_path)
         
     except FileNotFoundError as e:
-        logging.error(f"파일 없음 에러: {str(e)}")
-        raise
-    except ValueError as e:
-        logging.error(f"처리 에러: {str(e)}")
+        logging.error(f"No files: {str(e)}")
         raise
     except Exception as e:
-        logging.error(f"예상치 못한 에러: {str(e)}")
+        logging.error(f"Unexpected Error: {str(e)}")
         raise
-
-
-# For debugging
-if __name__ == '__main__':
-    config = configparser.ConfigParser()
-    with open('D:/aphasia/MMATD/src/config.yaml', 'r') as file:
-        config = yaml.safe_load(file)
-    print('Starting...')
-    model = RAPIDModel(config)
-    print('Model loaded...')
-    pred, att_vl, v_att_score = model.predict('D:/aphasia/MMATD/src/example.mp4')
-    print(f'Prediction: {pred}')
-    print('Prediction done...')

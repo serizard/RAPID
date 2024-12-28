@@ -1,210 +1,5 @@
 import numpy as np
-import pandas as pd
-from collections import defaultdict
 from tqdm import tqdm
-
-
-def get_labels(aphasia_type):   
-   # 소문자로 변환하여 처리
-   aphasia_type = aphasia_type.lower()
-   
-   # 기본값 설정
-   type = ""
-   ct_label = 0
-   wab_label = 0 
-   type_label = 0
-   flu_label = 0
-   com_label = 0
-   
-   if aphasia_type in ['control', 'notaphasicbywab']:
-       type = "Control"
-       status = 'Control'
-       ct_label = 0
-       wab_label = 0
-       type_label = 0
-       flu_label = 0
-       com_label = 0
-       
-   elif aphasia_type in ['anomic', 'conduction']:
-       type = aphasia_type.capitalize()
-       status = 'Aphasia'
-       ct_label = 1
-       wab_label = 1  # Fluent & Comprehends
-       type_label = 1  # Fluent
-       flu_label = 1  # Fluent
-       com_label = 0  # Comprehends
-       
-   elif aphasia_type in ['wernicke', 'transsensory']:
-       type = "Wernicke" if aphasia_type == 'wernicke' else "Trans. Sensory"
-       status = 'Aphasia'
-       ct_label = 1
-       wab_label = 2  # Fluent & Not Comprehends
-       type_label = 2  # Non-Comprehension
-       flu_label = 1  # Fluent
-       com_label = 1  # Not Comprehends
-       
-   elif aphasia_type in ['broca', 'transmotor']:
-       type = "Broca" if aphasia_type == 'broca' else "Trans. Motor"
-       status = 'Aphasia'
-       ct_label = 1
-       wab_label = 3  # Non-Fluent & Comprehends
-       type_label = 3  # Non-Fluent
-       flu_label = 0  # Non-Fluent
-       com_label = 0  # Comprehends
-       
-   elif aphasia_type in ['global', 'isolation']:
-       type = "Global" if aphasia_type == 'global' else "Isolation"
-       status = 'Aphasia'
-       ct_label = 1
-       wab_label = 4  # Non-Fluent & Not Comprehends
-       type_label = 3  # Non-Fluent
-       flu_label = 0  # Non-Fluent
-       com_label = 1  # Not Comprehends
-   
-   else:
-       return None, None, None, None, None, None
-
-   return type, status, ct_label, wab_label, type_label, flu_label, com_label
-
-
-def add_special_tokens_to_features(features):
-    _, feature_dim = features.shape
-    
-    cls_token = np.random.normal(0, 0.02, (1, feature_dim))
-    eos_token = np.random.normal(0, 0.02, (1, feature_dim))
-    
-    augmented_features = np.concatenate([cls_token, features, eos_token], axis=0)
-    
-    return augmented_features
-
-
-
-def calculate_gesture_changes(df, video_col, threshold_multiplier=1.5):
-    """프레임별 제스처 변화량 계산"""
-    changes = np.zeros(len(df))
-    
-    for col in video_col:
-        if col in df.columns:
-            # 각 좌표의 변화량 계산
-            diff = np.abs(np.diff(df[col].values, prepend=df[col].values[0]))
-            # 임계값 계산
-            threshold = np.std(diff) * threshold_multiplier
-            # 임계값 이상의 변화가 있는 프레임 표시
-            changes += (diff > threshold).astype(float)
-    
-    # 전체 피처에서 유의미한 변화가 있는 프레임 반환 (numpy array)
-    return (changes > 0).astype(bool)
-
-def calculate_audio_changes(df, audio_col, z_score_threshold=1.0):
-    """프레임별 오디오 특성 변화량 계산"""
-    changes = np.zeros(len(df))
-    
-    for col in audio_col:
-        if col in df.columns:
-            values = df[col].values
-            if len(values[~np.isnan(values)]) > 0:
-                mean = np.nanmean(values)
-                std = np.nanstd(values)
-                if std > 0:
-                    z_scores = np.abs((values - mean) / std)
-                    changes += (z_scores > z_score_threshold).astype(float)
-    
-    return (changes > 0).astype(bool)
-
-
-def create_feature_adjacency_matrices(dfs, disfluency_tokens, video_col, audio_col, std_multiplier=1.5, base_weight=0.3):
-    """새로운 방식의 인접 행렬 생성"""
-    n_samples = len(dfs)
-    n_tokens = len(disfluency_tokens)
-    
-    # 전체 데이터셋에 대한 co-occurrence 통계 계산
-    total_co_occurrences = defaultdict(int)
-    total_counts = defaultdict(int)
-    
-    print("Calculating global co-occurrence statistics...")
-    try:
-        iterator = tqdm(dfs, desc="Processing datasets", position=0, leave=True)
-    except:
-        print("Warning: Progress bar disabled")
-        iterator = dfs
-        
-    for df in iterator:
-        # 각 토큰의 출현 위치 확인
-        token_positions = defaultdict(list)
-        for i, token in enumerate(df['token'].values):
-            if token.lower() in disfluency_tokens:
-                token_positions[token.lower()].append(i)
-        
-        # 제스처/오디오 변화 계산
-        gesture_changes = calculate_gesture_changes(df, video_col, std_multiplier)
-        audio_changes = calculate_audio_changes(df, audio_col)
-        
-        # Co-occurrence 계산
-        for token, positions in token_positions.items():
-            for pos in positions:
-                # 해당 토큰 주변 ±2 프레임 검사
-                start_idx = max(0, pos-2)
-                end_idx = min(len(df), pos+3)
-                window_gesture = gesture_changes[start_idx:end_idx]
-                window_audio = audio_changes[start_idx:end_idx]
-                
-                if np.any(window_gesture):
-                    total_co_occurrences[('gesture', token)] += 1
-                if np.any(window_audio):
-                    total_co_occurrences[('audio', token)] += 1
-                    
-                total_counts[token] += 1
-    
-    # 정규화된 co-occurrence 가중치 계산
-    weights = {}
-    for (modality, token), count in total_co_occurrences.items():
-        if total_counts[token] > 0:
-            weights[(modality, token)] = count / total_counts[token]
-    
-    # 인접 행렬 생성
-    print("\nCreating adjacency matrices...")
-    adj_matrices = []
-    
-    for df in iterator:
-        seq_length = len(df)
-        # 시퀀스 길이 x 토큰 수 크기의 인접 행렬
-        adj_matrix = np.zeros((seq_length, n_tokens))
-        
-        # # 각 프레임에서의 변화 감지
-        # gesture_changes = calculate_gesture_changes(df, video_col, std_multiplier)
-        # audio_changes = calculate_audio_changes(df, audio_col)
-        
-        # 각 토큰의 출현과 변화를 연결
-        for i, token in enumerate(df['token'].values):
-            if token.lower() in disfluency_tokens:
-                token_idx = disfluency_tokens.index(token.lower())
-                
-                # 기본 가중치 할당
-                adj_matrix[i, token_idx] = base_weight
-                
-                # 현재 프레임 주변 ±2 프레임 검사
-                # start_idx = max(0, i-2)
-                # end_idx = min(seq_length, i+3)
-                # window_gesture = gesture_changes[start_idx:end_idx]
-                # window_audio = audio_changes[start_idx:end_idx]
-                
-                # 제스처나 오디오 변화가 있는 경우 추가 가중치 할당
-                additional_weight = weights.get(('gesture', token.lower()), 0) + weights.get(('audio', token.lower()), 0) - 1.7
-                additional_weight *= 100
-                # if np.any(window_gesture):
-                #     additional_weight += weights.get(('gesture', token.lower()), 0)
-                # if np.any(window_audio):
-                #     additional_weight += weights.get(('audio', token.lower()), 0)
-                
-                # 기존 가중치에 추가 가중치를 더함
-                adj_matrix[i, token_idx] += additional_weight
-        
-        adj_matrices.append(adj_matrix)
-    
-    final_adj_matrices = np.stack(adj_matrices)
-    return final_adj_matrices
-
-
 
 video_col = ['NOSE_x', 'NOSE_y', 'NOSE_z', 'LEFT_EYE_INNER_x','LEFT_EYE_INNER_y', 'LEFT_EYE_INNER_z', 'LEFT_EYE_x', 'LEFT_EYE_y','LEFT_EYE_z', 
              'LEFT_EYE_OUTER_x', 'LEFT_EYE_OUTER_y','LEFT_EYE_OUTER_z', 'RIGHT_EYE_INNER_x', 'RIGHT_EYE_INNER_y','RIGHT_EYE_INNER_z', 
@@ -222,3 +17,187 @@ audio_col = ['F0semitoneFrom27.5Hz_sma3nz_amean','F1amplitudeLogRelF0_sma3nz_ame
              'hammarbergIndexV_sma3nz_amean','jitterLocal_sma3nz_amean','logRelF0-H1-A3_sma3nz_amean','logRelF0-H1-H2_sma3nz_amean',
              'loudness_sma3_amean','mfcc1_sma3_amean','mfcc2_sma3_amean','mfcc3_sma3_amean','mfcc4_sma3_amean','shimmerLocaldB_sma3nz_amean',
              'slopeV0-500_sma3nz_amean','slopeV500-1500_sma3nz_amean','spectralFlux_sma3_amean']
+
+
+def get_labels(aphasia_type):   
+    aphasia_type = aphasia_type.lower()
+    type = ""
+    ct_label = wab_label = type_label = flu_label = com_label = 0
+    
+    if aphasia_type in ['control', 'notaphasicbywab']:
+        type, status = "Control", 'Control'
+        
+    elif aphasia_type in ['anomic', 'conduction']:
+        type = aphasia_type.capitalize()
+        status = 'Aphasia'
+        ct_label = wab_label = type_label = flu_label = 1
+        
+    elif aphasia_type in ['wernicke', 'transsensory']:
+        type = "Wernicke" if aphasia_type == 'wernicke' else "Trans. Sensory"
+        status = 'Aphasia'
+        ct_label = wab_label = type_label = flu_label = com_label = 1
+        wab_label = 2
+        type_label = 2
+        
+    elif aphasia_type in ['broca', 'transmotor']:
+        type = "Broca" if aphasia_type == 'broca' else "Trans. Motor"
+        status = 'Aphasia'
+        ct_label = wab_label = type_label = 1
+        wab_label = 3
+        type_label = 3
+        
+    elif aphasia_type in ['global', 'isolation']:
+        type = "Global" if aphasia_type == 'global' else "Isolation"
+        status = 'Aphasia'
+        ct_label = wab_label = type_label = com_label = 1
+        wab_label = 4
+        type_label = 3
+    
+    else:
+        return None, None, None, None, None, None, None
+
+    return type, status, ct_label, wab_label, type_label, flu_label, com_label
+
+def add_special_tokens_to_features(features):
+    _, feature_dim = features.shape
+    cls_token = np.ones((1, feature_dim))
+    eos_token = -1 * np.ones((1, feature_dim))
+    return np.concatenate([cls_token, features, eos_token], axis=0)
+
+def calculate_gesture_changes(df, video_col, threshold_multiplier=1.5):
+    changes = np.zeros(len(df))
+    
+    for col in video_col:
+        if col in df.columns:
+            diff = np.abs(np.diff(df[col].values, prepend=df[col].values[0]))
+            threshold = np.std(diff) * threshold_multiplier
+            changes += (diff > threshold).astype(float)
+    
+    return (changes > 0).astype(bool)
+
+def calculate_audio_changes(df, audio_col, z_score_threshold=1.0):
+    changes = np.zeros(len(df))
+    
+    for col in audio_col:
+        if col in df.columns:
+            values = df[col].values
+            if len(values[~np.isnan(values)]) > 0:
+                mean = np.nanmean(values)
+                std = np.nanstd(values)
+                if std > 0:
+                    z_scores = np.abs((values - mean) / std)
+                    changes += (z_scores > z_score_threshold).astype(float)
+    
+    return (changes > 0).astype(bool)
+
+def create_feature_adjacency_matrices(dfs, disfluency_tokens, video_col, audio_col):
+    def safe_correlation(x, y):
+        if len(x) < 2 or len(y) < 2:
+            return 0.0
+        if np.all(x == x[0]) or np.all(y == y[0]):
+            return 0.0
+        try:
+            corr = np.corrcoef(x, y)[0,1]
+            return 0.0 if np.isnan(corr) else corr
+        except:
+            return 0.0
+
+    def calculate_temporal_correlation(token_features, modal_features, window_size=3):
+        if len(token_features) < window_size:
+            return 0.0
+            
+        correlations = []
+        for i in range(len(token_features) - window_size + 1):
+            token_window = token_features[i:i + window_size]
+            modal_window = modal_features[i:i + window_size]
+            
+            modal_abs = np.abs(modal_window)
+            modal_change = np.zeros(len(modal_window))
+            
+            for idx in range(len(modal_window)):
+                row = modal_abs[idx]
+                if not np.all(np.isnan(row)):
+                    modal_change[idx] = np.nanmean(row)
+                else:
+                    modal_change[idx] = 0.0
+            
+            token_change = np.sum(token_window, axis=1)
+            
+            if not np.any(np.isnan(token_change)) and not np.any(np.isnan(modal_change)):
+                corr = safe_correlation(token_change, modal_change)
+                correlations.append(corr)
+        
+        return np.mean(correlations) if correlations else 0.0
+
+    def safe_mean(x):
+        return np.nanmean(x) if len(x) > 0 and not np.all(np.isnan(x)) else 0.0
+    
+    def safe_std(x):
+        return np.nanstd(x) if len(x) > 0 and not np.all(np.isnan(x)) else 1.0
+
+    def calculate_gesture_significance(gesture_features):
+        if len(gesture_features) < 2:
+            return 0.0
+        try:
+            movement = np.diff(gesture_features, axis=0)
+            magnitude = np.linalg.norm(movement, axis=1)
+            magnitude = magnitude[~np.isnan(magnitude)]
+            if len(magnitude) < 2:
+                return 0.0
+            mean_magnitude = safe_mean(magnitude)
+            std_magnitude = safe_std(magnitude)
+            return mean_magnitude * (1 + std_magnitude)
+        except:
+            return 0.0
+
+    def calculate_audio_significance(audio_features):
+        if len(audio_features) < 2:
+            return 0.0
+        try:
+            clean_features = audio_features[~np.any(np.isnan(audio_features), axis=1)]
+            if len(clean_features) < 2:
+                return 0.0
+            intensity = np.linalg.norm(clean_features, axis=1)
+            mean_intensity = safe_mean(intensity)
+            std_intensity = safe_std(intensity)
+            return mean_intensity * (1 + std_intensity)
+        except:
+            return 0.0
+
+    n_samples = len(dfs)
+    n_tokens = len(disfluency_tokens)
+    adj_matrices = []
+    
+    print("Computing enhanced feature correlations...")
+    for df in tqdm(dfs):
+        token_matrix = np.zeros((len(df), n_tokens))
+        for i, token in enumerate(df['token'].values):
+            if token.lower() in disfluency_tokens:
+                token_idx = disfluency_tokens.index(token.lower())
+                token_matrix[i, token_idx] = 1
+        
+        gesture_features = df[video_col].values
+        audio_features = df[audio_col].values
+        
+        token_weights = np.zeros(n_tokens)
+        for j, token in enumerate(disfluency_tokens):
+            token_mask = token_matrix[:, j] == 1
+            if np.any(token_mask):
+                temporal_corr_gesture = calculate_temporal_correlation(
+                    token_matrix[:, [j]], gesture_features)
+                temporal_corr_audio = calculate_temporal_correlation(
+                    token_matrix[:, [j]], audio_features)
+                
+                gesture_sig = calculate_gesture_significance(gesture_features[token_mask])
+                audio_sig = calculate_audio_significance(audio_features[token_mask])
+                
+                gesture_weight = temporal_corr_gesture * gesture_sig
+                audio_weight = temporal_corr_audio * audio_sig
+                
+                total_weight = gesture_weight + audio_weight
+                token_weights[j] = total_weight if total_weight != 0 else 0.0
+        
+        adj_matrix = token_matrix * token_weights
+        adj_matrices.append(adj_matrix)
+    
+    return np.stack(adj_matrices)

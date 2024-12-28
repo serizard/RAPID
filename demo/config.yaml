@@ -24,5 +24,9 @@ edge_weight: True
 update: True
 
 # paths
-keyword_path: D:/aphasia/MMATD/dataset/_disfluency_tk_300.json
-checkpoint_path: D:/aphasia/MMATD/src/ckpt/epoch=40-step=8282.ckpt
+keyword_path: /workspace/RAPID/dataset/_disfluency_tk_300.json
+checkpoint_path: Your model checkpoint path
+video_path: Your video path
+
+# api
+api_key: Your api key
