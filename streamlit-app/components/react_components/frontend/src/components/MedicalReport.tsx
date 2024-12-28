@@ -12,20 +12,11 @@ interface State {
   count: number;
 }
 
-interface CustomLabelProps {
-  cx: number;
-  cy: number;
-  outerRadius: number;
-  startAngle: number;
-  endAngle: number;
-  index: number;
-}
-
 interface Token {
-  token: string;
-  start: number;
-  end: number;
-  importance: number;
+  token: string[];
+  start: number[];
+  end: number[];
+  importance: number[];
 }
 
 interface PatientInfoProps {
@@ -40,8 +31,8 @@ interface PatientInfoProps {
     Non_Fluent: number;
   };
   diagnosisDate: string;
-  timestamp: [number,number]; // 필요한 타입으로 수정
-  tokens: Token[]; // Token 타입의 배열
+  timestamp: [number, number];
+  tokens: Token; 
 }
 
 interface DiagnosisDataItem {
@@ -52,35 +43,32 @@ interface DiagnosisDataItem {
 
 class MedicalReport extends StreamlitComponentBase<State> {
   public render = (): React.ReactNode => {
-    // Streamlit에서 전달된 데이터 읽기
     const patientInfo: PatientInfoProps = this.props.args["patient_info"] || {
       name: "John Doe",
       birthYear: 2000,
       gender: "male",
       prediction: "Control",
-      logit_values: { 
-        "Control": 0.6, 
-        "Fluent": 0.2, 
-        "Non_Comprehensive": 0.1,  // 수정
-        "Non_Fluent": 0.1  // 수정
+      logit_values: {
+        Control: 0.6,
+        Fluent: 0.2,
+        Non_Comprehensive: 0.1,
+        Non_Fluent: 0.1
       },
       diagnosisDate: "2024-11-25",
-      timestamp: [150,160],
-      tokens: [
-        {
-          token: "was",
-          start: 0.0,
-          end: 0.5,
-          importance: 0.0
-        }
-      ]
+      timestamp: [150, 160],
+      tokens: {
+        token: ["was"],
+        start: [0.0],
+        end: [0.5],
+        importance: [0.0]
+      }
     };
 
     const logit_values = patientInfo.logit_values || {
       "Control": 0.6,
       "Fluent": 0.2,
-      "Non_Comprehensive": 0.1,  // 수정
-      "Non_Fluent": 0.1  // 수정
+      "Non_Comprehensive": 0.1, 
+      "Non_Fluent": 0.1  
     };
 
     const diagnosisData: DiagnosisDataItem[] = [
@@ -150,7 +138,7 @@ class MedicalReport extends StreamlitComponentBase<State> {
           </div>
         </div>
 
-      {/* 환자 기본 정보 */}
+      {/* Patients Info */}
       <div className="bg-white shadow-lg rounded-lg p-6 mb-8">
         <h2 className="text-xl text-blue-600 font-bold mb-4">Patient Information</h2>
         <div className="grid grid-cols-2 gap-4">
@@ -202,7 +190,7 @@ class MedicalReport extends StreamlitComponentBase<State> {
                dominantBaseline="central"
                fontSize={8}
              >
-               {`${diagnosisData[index].name}: ${value}`}
+               {`${diagnosisData[index].name}: ${formattedValue}`}
              </text>
            );
          }}
@@ -217,9 +205,7 @@ class MedicalReport extends StreamlitComponentBase<State> {
    <div className="flex items-center justify-center px-4">
      <div className="text-center">
        {(() => {
-         const sortedData = [...diagnosisData]
-           .filter(item => item.name !== 'Control')
-           .sort((a, b) => b.value - a.value);
+         const sortedData = [...diagnosisData].sort((a, b) => b.value - a.value);
 
          const primary = sortedData[0];
          const secondary = sortedData.slice(1, 3);
@@ -227,7 +213,7 @@ class MedicalReport extends StreamlitComponentBase<State> {
          return (
            <>
              <p className="font-bold text-lg mb-2">
-               Primary Diagnosis: {primary.name} Aphasia ({(primary.value * 100).toFixed(0)}%)
+               Primary Diagnosis: {primary.name} ({(primary.value * 100).toFixed(0)}%)
              </p>
              <p className="text-gray-600">
                Secondary: {secondary.map((item, index) => 
@@ -259,6 +245,7 @@ class MedicalReport extends StreamlitComponentBase<State> {
   </div>
 </div>
 
+
       {/* Detailed Examination Section */}
 <div className="bg-white shadow-lg rounded-lg p-6 mb-8">
   <h2 className="text-xl text-blue-600 font-bold mb-4">Detailed Examination</h2>
@@ -268,11 +255,31 @@ class MedicalReport extends StreamlitComponentBase<State> {
     <div className="w-full" style={{ height: '400px' }}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
-          data={patientInfo.tokens.map((token, index) => ({
-            name: token.start.toFixed(2),
-            importance: token.importance,
-            token: token.token
-          }))}
+          data={(() => {
+            // Create an array of objects from the token data arrays
+            if (!patientInfo.tokens || typeof patientInfo.tokens !== 'object') return [];
+            
+            const tokenData = patientInfo.tokens;
+            const dataPoints = [];
+            
+            // Check if we have arrays and they have the same length
+            if (Array.isArray(tokenData.token) && 
+                Array.isArray(tokenData.start) && 
+                Array.isArray(tokenData.importance) &&
+                tokenData.token.length === tokenData.start.length &&
+                tokenData.token.length === tokenData.importance.length) {
+              
+              for (let i = 0; i < tokenData.token.length; i++) {
+                dataPoints.push({
+                  name: tokenData.start[i].toFixed(2),
+                  importance: tokenData.importance[i],
+                  token: tokenData.token[i]
+                });
+              }
+            }
+            
+            return dataPoints;
+          })()}
           margin={{ top: 20, right: 30, left: 40, bottom: 20 }}
         >
           <CartesianGrid strokeDasharray="3 3" />
@@ -308,7 +315,7 @@ class MedicalReport extends StreamlitComponentBase<State> {
     </div>
   </div>
 
-  {/* Analysis Explanations - 기존과 동일 */}
+  {/* Analysis Explanations */}
   <div className="space-y-4">
     <div className="p-4 bg-blue-50 rounded-lg">
       <p className="text-gray-800">
@@ -317,7 +324,7 @@ class MedicalReport extends StreamlitComponentBase<State> {
     </div>
     <div className="p-4 bg-blue-50 rounded-lg">
       <p className="text-gray-800">
-        As a result of the analysis, the highest risk interval is between <span className="text-red-600 font-bold">{patientInfo.timestamp[0]} ~ {patientInfo.timestamp[1]}</span> seconds. Watch the video and see!
+        Based on the analysis, the interval between <span className="text-red-600 font-bold">{patientInfo.timestamp[0]} ~ {patientInfo.timestamp[1]}</span> seconds contributed most significantly to the model's prediction. Watch the video to see!
       </p>
     </div>
   </div>

@@ -1,9 +1,7 @@
 import React from 'react';
 
-// 기능 상태를 위한 타입 정의
 type FunctionalityState = 'normal' | 'impaired';
 
-// 기능 설명을 위한 인터페이스
 interface Functionalities {
   fluency: {
     normal: string;
@@ -23,7 +21,6 @@ interface Functionalities {
   };
 }
 
-// 평가 결과를 위한 인터페이스
 interface EvaluationResult {
   fluency: FunctionalityState;
   comprehension: FunctionalityState;
@@ -31,16 +28,13 @@ interface EvaluationResult {
   naming: FunctionalityState;
 }
 
-// 실어증 타입 정의
 type AphasiaType = 'Control' | 'Fluent' | 'Non_Comprehensive' | 'Non_Fluent';
 
-// Props 인터페이스
 interface AphasiaTypeAnalysisProps {
   logits: Record<AphasiaType, number>;
 }
 
 const AphasiaTypeAnalysis: React.FC<AphasiaTypeAnalysisProps> = ({ logits }) => {
-  // 정상 및 손상된 기능 정의
   const functionalities: Functionalities = {
     fluency: {
       normal: "Speech is fluent and grammatically correct, with coherent content. There is no frequent use of filler words or nonsensical phrases.",
@@ -60,7 +54,6 @@ const AphasiaTypeAnalysis: React.FC<AphasiaTypeAnalysisProps> = ({ logits }) => 
     },
   };
 
-  // 실어증 타입에 대한 평가 결과 매핑
   const aphasiaTypes: Record<AphasiaType, EvaluationResult> = {
     Control: {
       fluency: "normal",
@@ -88,13 +81,11 @@ const AphasiaTypeAnalysis: React.FC<AphasiaTypeAnalysisProps> = ({ logits }) => 
     }
   };
 
-  // 타입 안전한 방식으로 최상위 진단 가져오기
   const entries = (Object.entries(logits) as [AphasiaType, number][]);
   const topDiagnosis = entries.reduce((prev, curr) => 
   logits[prev[0]] * 100 > logits[curr[0]] * 100 ? prev : curr
 )[0] as AphasiaType;
 
-  // 최상위 진단에 대한 평가 결과 가져오기
   const evaluationResults = aphasiaTypes[topDiagnosis];
 
   return (

@@ -24,7 +24,7 @@ interface AssessmentResult {
 }
 
 const openai = new OpenAI({
-  apiKey: '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', // 여기에 실제 OpenAI API 키를 입력하세요
+  apiKey: "Your-api-key",
   dangerouslyAllowBrowser: true,
 });
 
@@ -32,14 +32,14 @@ const constructPrompt = (diagnosisData: RiskAssessmentProps['diagnosisData']) =>
   return `As a highly experienced neurologist specializing in aphasia, provide a comprehensive analysis of the following diagnosis results:
 
 Diagnosis Values:
-- Broca's Aphasia: ${diagnosisData[0].value}
-- Wernicke's Aphasia: ${diagnosisData[1].value}
-- Anomic Aphasia: ${diagnosisData[2].value}
-- Control (Normal): ${diagnosisData[3].value}
+- Control (Normal): ${diagnosisData[0].value}
+- Fluent Aphasia: ${diagnosisData[1].value}
+- Non-comprehensive Aphasia: ${diagnosisData[2].value}
+- Non-fluent aphasia (Normal): ${diagnosisData[3].value}
 
 ### Risk Evaluation:
 1. Use the "Control (Normal)" value as a baseline for healthy language function.
-2. Compare the other values (Broca's, Wernicke's, Anomic Aphasia) to the "Control" value.
+2. Compare the other values (Fluent, Non-comprehensive, Non-fluent Aphasia) to the "Control" value.
 3. Assess the relative proportions of each aphasia type to the "Control" value to determine the overall severity of language impairment.
 4. Calculate a comprehensive risk percentage (0-100) using these relationships:
    - 75-100: Critical risk level requiring immediate medical attention.
