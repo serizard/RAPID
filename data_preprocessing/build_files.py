@@ -12,7 +12,7 @@ from utils import get_labels, add_special_tokens_to_features, create_feature_adj
 
 
 def make_chunks(chunk_size):
-    with open('/workspace/MMATD/data_preprocessing/metadata.json','r') as f:
+    with open('/workspace/RAPID/data_preprocessing/metadata.json','r') as f:
         previous_metadata = json.load(f)
         metadata = {}
         for k,v in previous_metadata.items():
@@ -24,7 +24,7 @@ def make_chunks(chunk_size):
                     "flu_label": {}, "com_label": {}, "data_id": {},
                     "duration": {}}
 
-    dirs = glob('D:/aphasia/dataset/tokens/text_bind/*')
+    dirs = glob('/workspace/dataset/tokens/text_bind/*')
     dfs = []
     audio_feats =[]
     data_id = -1
@@ -85,7 +85,7 @@ def make_chunks(chunk_size):
             except:
                 continue
 
-    with open(f'/workspace/MMATD/dataset/dataset_chunk{chunk_size}.json','w') as f:
+    with open(f'/workspace/RAPID/dataset/dataset_chunk{chunk_size}.json','w') as f:
         json.dump(dataset_chunk,f, indent=4)
 
 
@@ -109,10 +109,10 @@ def make_chunks(chunk_size):
     video_feats_with_additional_tokens = np.stack(video_feats_with_additional_tokens)
 
 
-    np.save(f'/workspace/MMATD/dataset/opensmile_chunk{chunk_size+2}_feat.npy', audio_feats_with_additional_tokens)
-    np.save(f'/workspace/MMATD/dataset/pose_chunk{chunk_size+2}_feat.npy', video_feats_with_additional_tokens)
-    np.save(f'/workspace/MMATD/dataset/opensmile_chunk{chunk_size}_feat.npy', audio_feats)
-    np.save(f'/workspace/MMATD/dataset/pose_chunk{chunk_size}_feat.npy', video_feats)
+    np.save(f'/workspace/RAPID/dataset/opensmile_chunk{chunk_size+2}_feat.npy', audio_feats_with_additional_tokens)
+    np.save(f'/workspace/RAPID/dataset/pose_chunk{chunk_size+2}_feat.npy', video_feats_with_additional_tokens)
+    np.save(f'/workspace/RAPID/dataset/opensmile_chunk{chunk_size}_feat.npy', audio_feats)
+    np.save(f'/workspace/RAPID/dataset/pose_chunk{chunk_size}_feat.npy', video_feats)
 
     Type_Control = len([v for v in dataset_chunk['type'].values() if v == 'Control'])
     Type_Anomic = len([v for v in dataset_chunk['type'].values() if v == 'Anomic'])
@@ -139,7 +139,7 @@ def make_chunks(chunk_size):
     Duration_Motor = np.mean([v for k, v in dataset_chunk['duration'].items() if dataset_chunk['type'][k] == 'Trans. Motor'])
     Duration_Total = np.mean([v for k, v in dataset_chunk['duration'].items()])      
 
-    with open(f'/workspace/MMATD/dataset/dataset_chunk{chunk_size}_stats.txt', 'w') as f:
+    with open(f'/workspace/RAPID/dataset/dataset_chunk{chunk_size}_stats.txt', 'w') as f:
         f.write(f'Aphasia Type\n')
         f.write(f'Control: {Type_Control}\n')
         f.write(f'Anomic: {Type_Anomic}\n')
@@ -172,7 +172,7 @@ def make_chunks(chunk_size):
     return dfs
 
 def make_adj(dfs, chunk_size):
-    disfluency_tokens = json.load(open('/workspace/MMATD/dataset/_disfluency_tk_300.json', 'r'))
+    disfluency_tokens = json.load(open('/workspace/RAPID/dataset/_disfluency_tk_300.json', 'r'))
 
     adj_matrix = create_feature_adjacency_matrices(
         dfs, 
@@ -182,7 +182,7 @@ def make_adj(dfs, chunk_size):
     )
     print(f"Adjacency matrix shape: {adj_matrix.shape}")
 
-    np.save(f'/workspace/MMATD/dataset/adj_chunk{chunk_size}_300_duration.npy', adj_matrix)
+    np.save(f'/workspace/RAPID/dataset/adj_chunk{chunk_size}_300_duration.npy', adj_matrix)
 
 
 

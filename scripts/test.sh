@@ -1,47 +1,15 @@
 #!/bin/bash
 # Usage: ./eval_tvl_llama.sh $GPU_NUMBER /path/to/your/model /path/to/your/encoder /path/to/your/data 
 
-
-python main.py \
+CUDA_VISIBLE_DEVICES=0 python main.py \
   --y_col type_label \
   --update \
-  --edge_weight \
   --graphuse \
+  --edge_weight \
   --train_gender both \
+  --chunk_size 50 \
   --num_token 150 \
   --phase test \
-  --checkpoint_path D:/aphasia/epoch=40-step=8282.ckpt
-
-  python main.py --y_col type_label --update --edge_weight --graphuse --train_gender both --num_token 150 --phase test --checkpoint_path D:/aphasia/epoch=40-step=8282.ckpt
-# gpu_num=$1
-# checkpoint_path=$2
-
-
-# if [ $# -eq 1 ]; then
-#     python main.py \
-#     --y_col type_label \
-#     --update \
-#     --edge_weight \
-#     --graphuse \
-#     --train_gender both \
-#     --num_token 150 \
-#     --phase test \
-#     --checkpoint_path $checkpoint_path
-
-# elif [ $# -eq 2 ]; then
-#     CUDA_VISIBLE_DEVICES=$gpu_num python main.py \
-#     --y_col type_label \
-#     --update \
-#     --edge_weight \
-#     --graphuse \
-#     --train_gender both \
-#     --num_token 150 \
-#     --phase test \
-#     --checkpoint_path $checkpoint_path \
-#     --gpu 0 \
-#     --use_gpu
-# else
-#   echo "Invalid GPU number"
-#   exit
-# fi
-
+  --gpu 0 \
+  --use_gpu \
+  --checkpoint_path /workspace/ckpts/chk50_nt150_graph_edge-epoch=10-train_loss=0.58.ckpt

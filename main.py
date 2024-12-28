@@ -75,7 +75,7 @@ class Model(LightningModule):
         
         # config:
         self.file_path = configparser.ConfigParser()
-        self.file_path.read('/workspace/MMATD/path.ini')
+        self.file_path.read('/workspace/RAPID/path.ini')
 
         self.args = args
         self.config = config
@@ -170,21 +170,22 @@ class Model(LightningModule):
         self.test_step_outputs = []
         
     def forward(self,labels,txt,aud,vid,idx_, **kwargs):
-        # 0. Input
-        batch_size, seq_ =txt.shape
-        v_h,_ = self.v_lstm(vid)
-        v_h, v_att_score = self.v_atten(v_h)
-        
-        a_h,_ = self.a_lstm(aud)
-        a_h, a_att_score = self.a_atten(a_h)
-        
-
         def historic_feat(feat):
             next_ = torch.cat([feat[1:,:,:], feat[0,:,:].unsqueeze(0)],axis=0)
             past_ = torch.cat([feat[-1,:,:].unsqueeze(0),feat[:-1,:,:]],axis=0)
 
             feat =torch.cat([feat,next_,past_],axis=2)
             return feat
+
+        # 0. Input
+        batch_size, seq_ =txt.shape
+
+        v_h,_ = self.v_lstm(vid)
+        v_h, v_att_score = self.v_atten(v_h)
+        
+        a_h,_ = self.a_lstm(aud)
+        a_h, a_att_score = self.a_atten(a_h)
+    
         vid_h = historic_feat(v_h)
         aud_h = historic_feat(a_h)
         
@@ -201,7 +202,7 @@ class Model(LightningModule):
             else:
                 mod_args = None
             gnn_h = self.conv(g=bg, inputs=bg.ndata['features'], mod_args=mod_args)
-        
+            
         
         # 2. Gesture-aware embedding update
         if self.config['update']:
@@ -223,18 +224,18 @@ class Model(LightningModule):
             elif self.config['rel_type'] == 'va':
                 aud_h = gnn_h['a'].reshape(batch_size,-1,self.gnn_size) # 32 x 30 x 20 [batch*node, hidden_dim]
                 vid_h = gnn_h['v'].reshape(batch_size,-1,self.gnn_size) # 32 x 30 x 20
+
         txt_h = self.model(input_ids =txt)
         
         # 3. Multimodal Fusion Encoder
-        with torch.cuda.amp.autocast():
-            relation_h,_, att_vl =self.MULTModel(txt_h[0], aud_h, vid_h) # 32 x 20
+        relation_h,_, att_ls =self.MULTModel(txt_h[0], aud_h, vid_h) # 32 x 20
         last_h_l = txt_h[1]+relation_h
-        
+    
         # 4. Aphasia Type Detection
         logits = self.fc2(F.relu(self.fc1(last_h_l)))
         loss = loss_function(logits, labels, self.loss_type, self.num_labels, 1.8)
 
-        return logits,loss,att_vl,v_att_score
+        return logits,loss,att_ls,v_att_score
 
     def configure_optimizers(self):
         if self.config['optimizer'] == 'adamw':
@@ -263,20 +264,20 @@ class Model(LightningModule):
         data_path = self.file_path['data_path']['chunk' + str(self.chunk_size)]    
         df = pd.read_json(data_path)           
 
-        aud_feat = np.load(self.file_path['feature_path'][self.a + str(self.chunk_size + 2)]) # +2 : BERT CLS, EOS token num
+        aud_feat = np.load(self.file_path['feature_path'][self.a + str(self.chunk_size + 2)]) 
         vid_feat = np.load(self.file_path['feature_path'][self.v+ str(self.chunk_size + 2)])   
         
         # Add Disfluency Tokens
-        with open('/workspace/MMATD/dataset/_disfluency_tk_300.json','r') as f:
+        with open('/workspace/RAPID/dataset/_disfluency_tk_300.json','r') as f:
             keywords = json.load(f)
-    
+
         keywords = keywords[:self.token_num]
         if self.config['update']:
             print("vocab size (before) : ", len(self.tokenizer))
             self.tokenizer.add_tokens(keywords, special_tokens=False)
             print("vocab size (after) : ", len(self.tokenizer))
             self.model.resize_token_embeddings(len(self.tokenizer))
-       
+    
             keyword_tokens = []
             for keyword in keywords:
                 token_ids = self.tokenizer.encode(keyword, add_special_tokens=False)
@@ -295,34 +296,32 @@ class Model(LightningModule):
             truncation=True,
         ))
         
-        
-        # Stratified GroupKfold
+        # Stratified GroupKfold for initial train/test split
         kf = StratifiedGroupKFold(n_splits=10, shuffle=True, random_state=self.seed)
         for i,(train_idxs, test_idxs) in enumerate(kf.split(df, df['type_label'], df['user_name'])):
             if i == self.split:
                 break
-            pprint(f"data Size: {len(train_idxs)}, {len(test_idxs)}")
-                
+            
         df_train = df.iloc[train_idxs]
         df_test = df.iloc[test_idxs]
-              
+            
         # Gender Setting
         if self.config['train_gender'] == 'female':
             df_train = df_train[df_train.sex == 'female']
-
         elif self.config['train_gender'] == 'male':
             df_train = df_train[df_train.sex == 'male']
             
         train_idxs = df_train.index.tolist()
-        
-        pprint(f"data Size: {len(df_train)}, {len(df_test)}")
+        test_idxs = df_test.index.tolist()
+
+        print(f"Data Size - Train: {len(df_train)}, Test: {len(df_test)}")
 
         # Heterogeneous Graph Construction 
         if self.config['graphuse']:
             print('build graph')
             self.g_list = build_graph(self.config,self.file_path).data_load(self.gpu)
 
-        # Dataloader
+        # Create TensorDatasets
         self.train_data = TensorDataset(
             torch.tensor(df_train['data_id'].tolist(), dtype=torch.long),
             torch.tensor(df_train[self.y_col].tolist(), dtype=torch.long),
@@ -331,6 +330,7 @@ class Model(LightningModule):
             torch.tensor(np.nan_to_num(vid_feat[train_idxs].astype('float64')), dtype=torch.float),
             torch.tensor(train_idxs, dtype=torch.long)
         )
+        
         
         self.test_data = TensorDataset(
             torch.tensor(df_test['data_id'].tolist(), dtype=torch.long),
@@ -346,7 +346,9 @@ class Model(LightningModule):
         print(f"Index range: {df.index.min()} to {df.index.max()}")
         print(f"Training data size: {len(df_train)}")
         print(f"Training index range: {min(train_idxs)} to {max(train_idxs)}")
-        print(f"Number of graphs: {len(self.g_list)}")
+        
+        if self.config['graphuse']:
+            print(f"Number of graphs: {len(self.g_list)}")
 
     def train_dataloader(self):
         return DataLoader(
@@ -355,7 +357,7 @@ class Model(LightningModule):
             shuffle=True,
             num_workers=self.args.cpu_workers,
         )
-    
+
     def test_dataloader(self):
         return DataLoader(
             self.test_data,
@@ -366,14 +368,14 @@ class Model(LightningModule):
     
     def training_step(self, batch, batch_idx):
         data_id, labels, txt,aud, vid,idx_ = batch 
-        logits,loss,att_vl,v_att_score = self(labels, txt,aud, vid,idx_) 
+        logits,loss,att_ls,v_att_score = self(labels, txt,aud, vid,idx_) 
         self.log("train_loss", loss, prog_bar=True, logger=True)
         
         return {'loss': loss}
 
     def test_step(self, batch, batch_idx):
         data_id, labels, txt,aud, vid,idx_ = batch 
-        logits,loss,att_vl,v_att_score = self(labels, txt,aud, vid,idx_) 
+        logits,loss,att_ls,v_att_score = self(labels, txt,aud, vid,idx_) 
 
         preds = logits.argmax(dim=-1)
         
@@ -384,7 +386,7 @@ class Model(LightningModule):
             'y_true': labels.cpu().numpy(),
             'y_pred': preds.cpu().numpy(),
             'data_id': data_id.cpu().numpy(),
-            'att_save': att_vl.detach().cpu().numpy(),
+            'att_save': att_ls.detach().cpu().numpy(),
             'lstm_att_save': v_att_score.detach().cpu().numpy(),
         }
 
@@ -394,11 +396,9 @@ class Model(LightningModule):
     def on_test_epoch_start(self):
         self.test_step_outputs = []
 
-
     def on_test_epoch_end(self):
         outputs = self.test_step_outputs
 
-        # 모든 배치의 결과 합치기
         loss = torch.tensor(0, dtype=torch.float)
         y_true = []
         y_pred = []
@@ -406,7 +406,7 @@ class Model(LightningModule):
         att_save = []
         lstm_att_save = []
 
-        for output in outputs:  # self.test_step_outputs 대신 outputs 사용
+        for output in outputs:
             loss += output['loss'].cpu().detach()
             y_true.extend(output['y_true'])
             y_pred.extend(output['y_pred'])
@@ -414,7 +414,6 @@ class Model(LightningModule):
             att_save.extend(output['att_save'])
             lstm_att_save.extend(output['lstm_att_save'])
         
-        # 평균 손실 계산
         _loss = loss / len(outputs)
         loss = float(_loss)
             
@@ -422,30 +421,28 @@ class Model(LightningModule):
         y_pred = np.asanyarray(y_pred)
         data_id = np.asanyarray(data_id)
             
-        val_score = classification_report(y_true, y_pred, output_dict=True) 
-        print(val_score)
+        test_score = classification_report(y_true, y_pred, output_dict=True) 
+        print(test_score)
 
-        # wandb 로깅
-        for metric_name, value in val_score.items():
+        for metric_name, value in test_score.items():
             if isinstance(value, dict):
                 for sub_metric, sub_value in value.items():
                     wandb.log({f'test/{metric_name}/{sub_metric}': sub_value})
             else:
                 wandb.log({f'test/{metric_name}': value})
 
-        # 결과를 DataFrame으로 변환하고 저장
-        val_df = pd.DataFrame.from_dict(val_score).T.reset_index()
-        val_df = val_df.rename(columns={'index':'category'})
-        val_df['save'] = self.save
-        val_df['chunk_size'] = self.chunk_size
-        val_df['test_size'] = len(y_pred)
-        val_df['split'] = self.split
-        val_df['y_col'] = self.y_col
-        val_df['modal'] = self.modal
-        val_df['embed'] = self.embed_type
-        val_df['agg_type'] = self.agg_type
-        val_df['hetero_type'] = self.agg_type
-        val_df['config'] = str(self.config)
+        test_df = pd.DataFrame.from_dict(test_score).T.reset_index()
+        test_df = test_df.rename(columns={'index':'category'})
+        test_df['save'] = self.save
+        test_df['chunk_size'] = self.chunk_size
+        test_df['test_size'] = len(y_pred)
+        test_df['split'] = self.split
+        test_df['y_col'] = self.y_col
+        test_df['modal'] = self.modal
+        test_df['embed'] = self.embed_type
+        test_df['agg_type'] = self.agg_type
+        test_df['hetero_type'] = self.agg_type
+        test_df['config'] = str(self.config)
         
         pred_dict = { 
             'save' : [self.save]*len(y_pred),
@@ -463,11 +460,10 @@ class Model(LightningModule):
             'pred' : y_pred,
         }
         
-        # 결과 저장
         self.save_path = f"./_result/"
         Path(f"{self.save_path}/pred").mkdir(parents=True, exist_ok=True)
         self.save_time = datetime.now().__format__("%m%d_%H%M%S%Z")
-        pd.DataFrame(val_df).to_csv(f'{self.save_path}{self.save_time}_{self.save}.csv',index=False)  
+        pd.DataFrame(test_df).to_csv(f'{self.save_path}{self.save_time}_{self.save}.csv',index=False)  
         pd.DataFrame(pred_dict).to_csv(f'{self.save_path}pred/{self.save_time}_{self.save}_pred.csv',index=False)
         
 
@@ -479,16 +475,16 @@ def main(args,config):
     th_seed_everything(config['random_seed'])
 
     wandb.init(
-        entity="serizard1005-sungkyunkwan-university",
-        project="capstone_train_final", 
+        entity="Your wandb entity",
+        project=config['wandb_project'], 
         name=config['save'], 
         config=config,
         sync_tensorboard=True
     )
 
     wandb_logger = WandbLogger(
-        entity="serizard1005-sungkyunkwan-university",
-        project="capstone_train_final", 
+        entity="Your wandb entity",
+        project=config['wandb_project'],
         name=config['save'], 
         log_model=True,
         sync_tensorboard=True
@@ -509,7 +505,7 @@ def main(args,config):
         monitor='train_loss',
         dirpath='/workspace/ckpts',
         filename=f'{config["save"]}'+'-{epoch:02d}-{train_loss:.2f}',
-        save_top_k=3,
+        save_top_k=1,
         mode='min',
     )
 
@@ -520,12 +516,12 @@ def main(args,config):
         fast_dev_run=args.test_mode,
         num_sanity_val_steps=None if args.test_mode else 0,
         callbacks=[early_stop_callback, checkpoint_callback],
-        deterministic=False, # ensure full reproducibility from run to run you need to set seeds for pseudo-random generators,
+        deterministic=False,
         # For GPU Setup
         accelerator='gpu',
         devices=[config['gpu']]if torch.cuda.is_available() else None,
         precision=16 if args.fp16 else 32,
-        default_root_dir='/workspace/MMATD/logs'
+        default_root_dir='/workspace/RAPID/logs'
     )
     
     if config['phase'] == 'train':
@@ -578,6 +574,7 @@ if __name__ == '__main__':
     parser.add_argument("--use_gpu", action='store_true', default=True)
     parser.add_argument("--phase", type=str, choices=['train', 'test', 'train_test'], default='train')
     parser.add_argument("--checkpoint_path", type=str, default=None)
+    parser.add_argument("--wandb_project", type=str, default=None)
     
     config = parser.parse_args()
     print(config)

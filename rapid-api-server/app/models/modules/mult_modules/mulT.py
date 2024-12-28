@@ -117,6 +117,7 @@ class MULTModel(nn.Module):
             # (V,A) --> L
             h_l_with_al, att_with_al = self.trans_l_with_a(proj_x_l, proj_x_a, proj_x_a)    # Dimension (L, N, d_l)
             h_l_with_vl, att_with_vl = self.trans_l_with_v(proj_x_l, proj_x_v, proj_x_v)    # Dimension (L, N, d_l)
+            combined_att = (att_with_al + att_with_vl) / 2
             h_ls = torch.cat([h_l_with_al, h_l_with_vl], dim=2)
             h_ls, att_ls = self.trans_l_mem(h_ls)
             if type(h_ls) == tuple:

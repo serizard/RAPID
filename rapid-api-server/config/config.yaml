@@ -24,4 +24,4 @@ edge_weight: True
 update: True
 
 # paths
-keyword_path: /workspace/MMATD/rapid-api-server/app/models/_disfluency_tk_300.json
+keyword_path: /workspace/RAPID/rapid-api-server/app/models/_disfluency_tk_300.json
