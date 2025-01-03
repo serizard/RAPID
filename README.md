@@ -1,6 +1,7 @@
 # RAPID: Real-time Aphasia Pattern Interpretation and Diagnosis
 
-![image](https://github.com/user-attachments/assets/9547ee1f-0156-4680-a25f-8407431b4de0)
+![image](https://github.com/user-attachments/assets/d8824f6a-a9e6-40a7-b7f1-bf400be2155d)
+
 
 RAPID is a state-of-the-art tool designed to assist in the diagnosis of aphasia using multimodal inputs such as speech, gesture, and audio data. By leveraging advanced machine learning models, it enables real-time self-diagnosis and generates a comprehensive diagnostic report.
 
